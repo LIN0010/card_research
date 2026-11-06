@@ -1,0 +1,12 @@
+-- 此舊草案已由正式版本化 migration 取代，請勿繼續套用舊 sessions 設計。
+-- 唯一執行來源：supabase/migrations/202611060001_mvp.sql
+--
+-- 新關聯：stores -> machines -> observation_segments -> games
+--                                      |-> cartridges
+--                                      |-> draws（同時連結 game、current/original cartridge）
+-- 另有 audit_events 與 app_private.operations。
+--
+-- 請在新的 Supabase 開發專案執行完整 migration，包含所有 RLS、權限及 RPC。
+-- 不能只建表或僅貼其中的 apply_command 函式。
+-- 此 repo 的先前 SQL 僅為未執行草案；若曾自行部署舊草案，請先備份，
+-- 不要直接在已有同名表的正式資料庫執行新建表 migration。
