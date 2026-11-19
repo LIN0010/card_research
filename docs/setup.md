@@ -21,7 +21,7 @@ Vite 固定使用 5173；若埠被占用會報錯，不會默默改到其他埠�
 ## 2. 手動建立 Supabase 開發專案
 
 1. 在 Supabase Dashboard 建立新專案，選擇合適區域，安全保存資料庫密碼。
-2. 開啟 **SQL Editor**，新增查詢，貼入並執行 `supabase/migrations/202611060001_mvp.sql` 的全部內容。
+2. 開啟 **SQL Editor**，使用資料庫管理角色 `postgres`，新增查詢，貼入並執行 `supabase/migrations/202611060001_mvp.sql` 的全部內容。全新且尚未執行 SQL 的專案，只需要此檔案一次；不要執行 `docs/database-schema.draft.sql`，也不需要額外的來源修正 patch migration。
 3. 確認執行成功，public 下有 stores、machines、observation_segments、games、cartridges、draws、audit_events，並有 apply_command 函式。app_private 不要加到 API 的 Exposed schemas。
 4. 此 migration 用於新專案，已成功執行就不重貼；它不是可反覆 DROP/CREATE 的腳本。如果曾自行執行過舊 draft，先備份資料並使用獨立新開發專案，不能直接覆蓋同名資料表。
 5. 從 Project Settings／Connect 的 API 設定複製 Project URL；從 API Keys 取得 publishable key。舊版專案可使用 anon key。
@@ -82,6 +82,7 @@ E2E 先以測試公開設定正式編譯到獨立的 `.e2e-dist`，再使用 390
 7. 測試更換及「不確定」批次；新批次原始側序重新從 1 起，全域序號繼續。
 8. 瀏覽器切成離線後送出一筆，確認輸入未被清空、沒有假成功提示；恢復連線後按重試確認，資料只有一筆。此版本沒有離線暫存或背景同步。
 9. 匯出 CSV／JSON，確認包含原始序號、已撤銷列及完整資料；JSON 另包含操作快照。
+10. 來源修正驗收：先錄左 049、右 001，換局後錄左 022，再把第一筆 049 的來源改為右。左清單應只剩 022，右清單應為 049 → 001，原始全域序號仍為 1、2、3。049 應顯示「來源已修正：左 → 右」，並保留原始左卡匣批次及側序供稽核；重新整理後結果不變。`side_index` 是原始配置，不是修正後右序，不能用它排序修正後的清單。
 
 ## 6. Vercel 部署
 

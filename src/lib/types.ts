@@ -11,6 +11,7 @@ export interface Game extends Owned { segment_id: string; game_index: number; st
 export interface Cartridge extends Owned { segment_id: string; side: 'left' | 'right'; batch_index: number; starts_at_index: number; certainty: Certainty; note: string }
 export interface Draw extends Owned {
   segment_id: string; game_id: string; draw_index: number; side: Side; cartridge_id: string | null
+  // Immutable original allocation for audit; current side order uses draw_index + side.
   recorded_side: Side; recorded_cartridge_id: string | null; side_index: number | null
   card_number: string; rarity: Rarity; recorded_at: string; updated_at: string; revision: number; deleted_at: string | null
 }

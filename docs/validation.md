@@ -28,3 +28,17 @@ E2E 指令：`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test
 PostgreSQL 測試使用 PGlite 執行真實 migration、PL/pgSQL、約束及 RLS，Auth 由最小測試 schema 提供。瀏覽器使用測試 HTTP adapter，並非對正式 Supabase 發送請求。未執行真正多資料庫連線的併發壓力測試。
 
 請完成 docs/setup.md 的手動設定與實際 Supabase 驗收，再判定是否可以正式使用。
+
+## 2026-11-20 來源修正與 migration 複查（台北）
+
+- `npm test`：23 項通過、0 失敗（14 PostgreSQL／權限／交易、5 表單／寫入狀態、2 匯出、2 序列／稽核顯示）。
+- `npm run build`：通過，包含 TypeScript 檢查。
+- Chromium E2E：3 項通過、0 失敗；新增左改右後左右清單、重新整理與 JSON 稽核匯出驗證。
+- 在空白本機 PostgreSQL 中重新執行原 migration。驗證同段跨局、修正到歷史右批次而非後來的新批次、反覆改為不明／左右、原始序號及來源保持不變。
+- 驗證其他使用者讀不到出卡與操作歷史，也不能修正來源；authenticated 不可直接改寫 draws 或刪除 audit_events，沒有登入身分不能呼叫寫入。
+- 重現並修正一項前端問題：操作時間戳相同時，舊排序可能把「修改」排在「新增」之前。現在按出卡 revision 排列，另明示來源修正與原始側序僅供稽核。
+- 未發現指定來源修正路徑的 SQL 執行錯誤或 RLS 漏洞；`side_index` 本來就是原始配置，不能視為修正後側序。沒有修改 SQL schema，也沒有新增 patch migration。
+
+全新且尚未執行 SQL 的 Supabase 專案，正式應執行 **supabase/migrations/202611060001_mvp.sql 的全部內容一次**。不要執行舊 draft。
+
+這次仍使用 PGlite 與測試用 Auth／HTTP adapter，未連到使用者新建的 Supabase 專案；其託管 Auth、API 與實際資料儲存仍需依設定教學驗收。

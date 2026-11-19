@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { SourceFields } from '../../components/FormFields'
 import { effectiveOrders, orderedDraws } from '../../lib/sequences'
+import { drawAuditHistory } from '../../lib/audit'
 import { rarityLabels, sideLabels, type DataSet, type Draw, type Rarity, type Side } from '../../lib/types'
 import type { Mutate } from '../../lib/useCommands'
 
@@ -36,13 +37,14 @@ export function DrawList({ draws, data, mutate, busy, context = false }: { draws
     const store = data.stores.find(s => s.id === machine?.store_id)
     const batch = data.cartridges.find(c => c.id === d.cartridge_id)
     const originalBatch = data.cartridges.find(c => c.id === d.recorded_cartridge_id)
-    const events = data.audit_events.filter(e => e.entity_id === d.id).sort((a, b) => a.created_at.localeCompare(b.created_at))
+    const events = drawAuditHistory(data.audit_events, d.id)
     return <li key={d.id} className={`draw-item ${d.deleted_at ? 'voided' : ''}`}>
       {context && <p className="muted">{store?.name}／{machine?.machine_name} · {segment?.label}</p>}
       <div className="flex justify-between gap-2 items-start"><div>
         <span className={`side-tag ${d.side}`}>{sideLabels[d.side]}</span><strong className="card-number">{d.card_number}</strong><span className="rarity">{rarityLabels[d.rarity]}</span>
         <p>原始 #{d.draw_index} · 第 {game?.game_index} 局{d.deleted_at ? ' · 已撤銷' : ` · 有效顯示 #${orders.overall.get(d.id)}／${sideLabels[d.side]} #${orders.side.get(d.id)}`}</p>
-        <small>原始側序：{d.side_index == null ? '來源不明' : `${sideLabels[d.recorded_side]}批次 ${originalBatch?.batch_index} #${d.side_index}`}
+        {d.side !== d.recorded_side && <p className="hint source-correction">來源已修正：{sideLabels[d.recorded_side]} → {sideLabels[d.side]}；清單依修正後來源排列。</p>}
+        <small>原始側序：{d.side_index == null ? '來源不明' : `${sideLabels[d.recorded_side]}批次 ${originalBatch?.batch_index} #${d.side_index}`}（僅供稽核）
           {batch && ` · 目前歸屬${sideLabels[d.side]}批次 ${batch.batch_index}（${batch.certainty === 'confirmed' ? '已確認' : '不確定'}）`}</small>
       </div></div>
       <small>{new Date(d.recorded_at).toLocaleString('zh-TW')}</small>
@@ -62,7 +64,7 @@ export function SequenceView({ segmentId, data, mutate, busy }: { segmentId: str
   const valid = draws.filter(d => !d.deleted_at)
   const last = valid.at(-1)
   return <section className="panel"><h2>觀測段出卡紀錄</h2>
-    <p className="muted">「原始」序號永不重排；「有效顯示」只為閱讀方便，不代表完整連續卡序。換局不重設；換批次的原始側序從 1 起。</p>
+    <p className="muted">左右清單依修正後來源與原始全域序號排列。「原始側序」保留新增當時來源，僅供稽核；「有效顯示」只為閱讀方便，不代表完整連續卡序。換局不重設；換批次的原始側序從 1 起。</p>
     <div className="actions my-3">{(['timeline', 'left', 'right', 'unknown'] as const).map(value => <button aria-pressed={view === value} className={view === value ? 'selected' : ''} key={value} onClick={() => setView(value)}>{value === 'timeline' ? '整體時間順序' : `${sideLabels[value]}側`}</button>)}
       <button disabled={busy || !last} onClick={() => { if (last && window.confirm(`撤銷最後一筆有效紀錄：原始 #${last.draw_index}？`)) void mutate('void_draw', { segment_id: last.segment_id, id: last.id, revision: last.revision }).catch(() => {}) }}>撤銷上一筆</button>
     </div>
