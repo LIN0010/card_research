@@ -42,3 +42,15 @@ PostgreSQL 測試使用 PGlite 執行真實 migration、PL/pgSQL、約束及 RLS
 全新且尚未執行 SQL 的 Supabase 專案，正式應執行 **supabase/migrations/202611060001_mvp.sql 的全部內容一次**。不要執行舊 draft。
 
 這次仍使用 PGlite 與測試用 Auth／HTTP adapter，未連到使用者新建的 Supabase 專案；其託管 Auth、API 與實際資料儲存仍需依設定教學驗收。
+
+## 2026-11-20 Card Research UI／UX 重構（台北）
+
+- `npm test`：27 項通過、0 失敗。原有 PostgreSQL、權限、跨局順序、稽核及冪等重試測試保留；新增明確選擇來源、前綴快捷及完整卡號保留的驗證。
+- `npm run build`：通過，包含 TypeScript 檢查。
+- Chromium E2E：4 項通過、0 失敗。原有兩機台樣本、重新整理、重新登入、修改、撤銷、來源修正及 CSV／JSON 下載仍通過。
+- 新增紀錄頁操作驗證：目前狀態、開始抽卡、左右雙欄、無預選來源、稀有度按鈕、P 字尾手動覆寫、成功後清空卡號與來源、不明來源、進階換批、下一局及結束抽卡。
+- 在 320、360、390、768、1440px 寬度檢查無橫向溢位、左右雙欄與手機底部／桌面頂部導覽。已讀取並檢查手機及桌面截圖。
+- 修正測試中發現的手機切換面板遮住關閉入口問題，並提供「完成切換」按鈕。
+- 比對確認 schema／RLS／RPC、登入初始化、AuthPanel、資料載入／儲存、稽核排序與套件依賴均未變更。此次不需新增 migration。
+
+上述瀏覽器測試仍使用本機 PGlite 與測試 HTTP adapter，不等於已部署至正式網站或已對託管 Supabase 完成驗證。

@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Icon, type IconName } from '../components/Icon'
+import { SaveStatus } from '../components/SaveStatus'
 import { Management } from '../features/management/Management'
-import { NewSegment, SegmentControls } from '../features/recording/SegmentControls'
-import { DrawForm } from '../features/recording/DrawForm'
-import { SequenceView } from '../features/history/DrawList'
+import { RecordingPage } from '../features/recording/RecordingPage'
 import { History } from '../features/history/History'
 import { downloadFile, exportCsv, exportJson } from '../lib/export'
 import { repository, type Repository } from '../lib/repository'
 import { emptyData } from '../lib/types'
 import { useCommands } from '../lib/useCommands'
 
+type Tab = 'record' | 'manage' | 'history'
+const tabs: { value: Tab; label: string; icon: IconName }[] = [
+  { value: 'record', label: '出卡紀錄', icon: 'cards' },
+  { value: 'manage', label: '店家與機台', icon: 'shop' },
+  { value: 'history', label: '歷史紀錄', icon: 'history' },
+]
 export function App({ email, onLogout, repo = repository }: { email: string; onLogout: () => Promise<void>; repo?: Repository }) {
   const [data, setData] = useState(emptyData)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [tab, setTab] = useState<'record' | 'manage' | 'history'>('record')
+  const [tab, setTab] = useState<Tab>('record')
   const [machineId, setMachineId] = useState(() => new URLSearchParams(location.search).get('machine') ?? '')
   const [segmentId, setSegmentId] = useState(() => new URLSearchParams(location.search).get('segment') ?? '')
   const [dirty, setDirty] = useState(false)
@@ -54,13 +60,14 @@ export function App({ email, onLogout, repo = repository }: { email: string; onL
   }, [dirty, commands.busy])
   function canLeave() { return !dirty || window.confirm('有尚未送出的卡號，切換後會清除輸入。確定切換？') }
   function selectMachine(id: string) { if (canLeave()) { setMachineId(id); setSegmentId(''); setDirty(false) } }
+  function selectSegment(id: string) { if (canLeave()) { setSegmentId(id); setDirty(false) } }
   async function exportData(format: 'csv' | 'json') {
     setExporting(true)
     try {
       const fresh = await repo.load()
       setData(fresh)
       const stamp = new Date().toISOString().replaceAll(':', '-')
-      downloadFile(format === 'csv' ? exportCsv(fresh) : exportJson(fresh), `aikatsu-${stamp}.${format}`, format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8')
+      downloadFile(format === 'csv' ? exportCsv(fresh) : exportJson(fresh), `card-research-${stamp}.${format}`, format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8')
     } catch (error) { setLoadError(`匯出前讀取失敗：${error instanceof Error ? error.message : '請重試'}`) }
     finally { setExporting(false) }
   }
@@ -70,33 +77,20 @@ export function App({ email, onLogout, repo = repository }: { email: string; onL
     try { await onLogout() } catch (error) { setAuthError(error instanceof Error ? error.message : '登出失敗，請重試') }
     finally { setLoggingOut(false) }
   }
+  const feedback = <SaveStatus message={commands.message} error={commands.error} loading={loading} sending={commands.sending} needsRetry={commands.needsRetry} retry={commands.retry} refresh={() => void refresh().catch(() => {})} refreshDisabled={commands.busy || exporting || loading} />
   return <>
-    <header className="page-header"><div><h1>偶像學園雙卡匣卡序研究系統</h1><p>線上紀錄 MVP · {email}</p></div><button disabled={commands.busy || exporting || loggingOut} onClick={() => void logout()}>登出</button></header>
-    <main className="page-main">
-      <nav className="tabs" aria-label="主要功能">{([['record', '出卡紀錄'], ['manage', '店家與機台'], ['history', '歷史與匯出']] as const).map(([value, label]) => <button key={value} disabled={commands.busy || exporting} aria-pressed={tab === value} className={tab === value ? 'selected' : ''} onClick={() => { if (value !== tab && canLeave()) { setTab(value); setDirty(false) } }}>{label}</button>)}</nav>
-      <section className="status-bar" aria-live="polite">
-        <span>{commands.message || (loading ? '正在從 Supabase 讀取…' : '資料已讀取，等待紀錄。')}</span>
-        {commands.needsRetry && <button className="primary" disabled={commands.sending} onClick={commands.retry}>重試確認儲存</button>}
-        <button disabled={commands.busy || exporting || loading} onClick={() => void refresh().catch(() => {})}>重新讀取</button>
-      </section>
-      {(loadError || commands.error || authError) && <div role="alert" className="error"><p>{loadError || commands.error || authError}</p>{loadError && <p>請確認網路、Supabase 環境變數與 migration 是否已設定。畫面可能是上次讀取資料。</p>}</div>}
+    <header className="page-header"><a className="brand" href="#main-content" aria-label="Card Research"><span className="brand-mark"><Icon name="cards" size={29} /></span><div><h1>Card Research</h1><p>我的卡片收藏手帳</p></div></a><div className="account-area"><span title={email}>{email}</span><button className="icon-button" aria-label="登出" title="登出" disabled={commands.busy || exporting || loggingOut} onClick={() => void logout()}><Icon name="logout" /></button></div></header>
+    <nav className="tabs" aria-label="主要功能">{tabs.map(({ value, label, icon }) => <button key={value} disabled={commands.busy || exporting} aria-pressed={tab === value} className={tab === value ? 'selected' : ''} onClick={() => { if (value !== tab && canLeave()) { setTab(value); setDirty(false) } }}><Icon name={icon} size={21} /><span>{label}</span></button>)}</nav>
+    <main className="page-main" id="main-content">
+      {(loadError || authError) && <div role="alert" className="error"><p>{loadError || authError}</p>{loadError && <p>暫時無法更新紀錄，請確認連線後按重新讀取。畫面可能是上次讀取的資料。</p>}</div>}
+      {tab !== 'record' && feedback}
       {tab === 'manage' && <Management data={data} mutate={commands.mutate} busy={busy} onMachine={id => { setMachineId(id); setSegmentId('') }} />}
-      {tab === 'record' && <>
-        {!data.machines.length && !loading && <section className="panel"><h2>先建立店家與機台</h2><p>完成後即可建立連續觀測段。尚未收到伺服器確認的輸入不會顯示為已儲存。</p><button className="primary mt-3" onClick={() => setTab('manage')}>前往管理</button></section>}
-        {machine && <>
-          <section className="panel"><div className="grid gap-3 sm:grid-cols-2"><label>目前機台<select disabled={busy} value={machine.id} onChange={e => selectMachine(e.target.value)}>{data.machines.map(m => <option key={m.id} value={m.id}>{data.stores.find(s => s.id === m.store_id)?.name}／{m.machine_name} · {m.game_version}</option>)}</select></label>
-            <label>連續觀測段<select disabled={busy || !segments.length} value={segment?.id ?? ''} onChange={e => { if (canLeave()) { setSegmentId(e.target.value); setDirty(false) } }}>{!segments.length && <option value="">請建立觀測段</option>}{segments.map(s => <option key={s.id} value={s.id}>{s.label} · {s.ended_at ? '已結束' : '觀測中'} · {new Date(s.started_at).toLocaleDateString('zh-TW')}</option>)}</select></label></div></section>
-          <NewSegment key={machine.id} machineId={machine.id} mutate={commands.mutate} busy={busy || dirty} onCreated={setSegmentId} />
-          {segment && <><SegmentControls key={segment.id} segment={segment} data={data} mutate={commands.mutate} busy={busy || dirty} />
-            {!segment.ended_at && game && <DrawForm key={segment.id} segmentId={segment.id} gameId={game.id} gameIndex={game.game_index} mutate={commands.mutate} busy={busy} onDirty={setDirty} />}
-            <SequenceView key={segment.id} segmentId={segment.id} data={data} mutate={commands.mutate} busy={busy || dirty} /></>}
-        </>}
-      </>}
+      {tab === 'record' && <RecordingPage data={data} machine={machine} segment={segment} game={game} segments={segments} mutate={commands.mutate} busy={busy} dirty={dirty} feedback={feedback} loading={loading} onDirty={setDirty} onMachine={selectMachine} onSegment={selectSegment} onManage={() => setTab('manage')} />}
       {tab === 'history' && <>
         <section className="panel"><h2>匯出我的資料</h2><p className="muted">匯出前重新讀取全部分頁。CSV 包含已撤銷列及原始序號；JSON 另含完整關聯及操作歷史。CSV 為試算表安全會處理公式開頭文字，原文以 JSON 為準。</p><div className="actions mt-3"><button disabled={busy} onClick={() => void exportData('csv')}>匯出 CSV</button><button disabled={busy} onClick={() => void exportData('json')}>匯出 JSON</button></div></section>
         <History data={data} mutate={commands.mutate} busy={busy} />
       </>}
     </main>
-    <footer>原始序號保留歷史；有效顯示編號只供閱讀。本階段不進行卡序預測。</footer>
+    <footer>Card Research <span>✧</span> 收藏每張卡，也留下每次相遇。</footer>
   </>
 }
