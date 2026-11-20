@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import type { Draw } from '../../src/lib/types'
 
 const USER = '00000000-0000-4000-8000-000000000001'
 // Test-only HTTP adapter: execute the real migration/RPC in local PostgreSQL.
@@ -170,5 +171,57 @@ test('a lost response after commit preserves input and retries without duplicati
     await expect(page.locator('.card-number')).toHaveText(['AP6-049'])
     expect((await db.query('select * from public.draws')).rows).toHaveLength(1)
     expect((await db.query("select * from public.audit_events where action = 'append_draw'")).rows).toHaveLength(1)
+  } finally { await db.close() }
+})
+
+test('correcting left to right updates both sequences after reload and preserves original source in audit and export', async ({ page }) => {
+  const db = await attachDatabase(page)
+  async function seed(action: string, payload: object) {
+    const result = await db.query<{ value: { id: string } }>('select public.apply_command($1::uuid,$2,$3::jsonb) as value', [randomUUID(), action, JSON.stringify(payload)])
+    return result.rows[0].value
+  }
+  try {
+    const store = await seed('create_store', { name: '來源修正測試店' })
+    const machine = await seed('create_machine', { store_id: store.id, machine_name: '左台', game_version: 'AP6' })
+    await seed('create_segment', { machine_id: machine.id, label: '連續觀測' })
+    await page.goto('/')
+    await login(page)
+    await draw(page, '左卡匣', '049')
+    await draw(page, '右卡匣', '001', 'four_star')
+    await page.getByRole('button', { name: '下一局（卡序繼續）', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '紀錄出卡 · 第 2 局' })).toBeVisible()
+    await draw(page, '左卡匣', '022')
+    const original = (await db.query<Draw>('select * from public.draws where draw_index = 1')).rows[0]
+
+    await page.locator('.draw-item').first().getByRole('button', { name: '修改', exact: true }).click()
+    await page.locator('.edit-form').getByRole('radio', { name: '右卡匣', exact: true }).check()
+    await page.getByRole('button', { name: '儲存修改', exact: true }).click()
+    await expect(page.locator('.draw-item').first()).toContainText('來源已修正：左 → 右')
+    await page.getByRole('button', { name: '左側', exact: true }).click()
+    await expect(page.locator('.card-number')).toHaveText(['022'])
+    await expect(page.locator('.draw-item')).toContainText('有效顯示 #3／左 #1')
+    await page.getByRole('button', { name: '右側', exact: true }).click()
+    await expect(page.locator('.card-number')).toHaveText(['049', '001'])
+    await expect(page.locator('.draw-item').first()).toContainText('有效顯示 #1／右 #1')
+    await expect(page.locator('.draw-item').last()).toContainText('有效顯示 #2／右 #2')
+    await expect(page.locator('.draw-item').first()).toContainText('原始側序：左批次 1 #1（僅供稽核）')
+    const events = page.locator('.draw-item').first().locator('.audit > ul > li')
+    await expect(events).toHaveCount(2)
+    await expect(events.nth(0)).toContainText('新增出卡')
+    await expect(events.nth(1)).toContainText('修改出卡')
+
+    await page.reload()
+    await page.getByRole('button', { name: '右側', exact: true }).click()
+    await expect(page.locator('.card-number')).toHaveText(['049', '001'])
+    const corrected = (await db.query<Draw>('select * from public.draws where id = $1', [original.id])).rows[0]
+    expect(corrected).toMatchObject({ side: 'right', draw_index: 1, recorded_side: 'left', recorded_cartridge_id: original.recorded_cartridge_id, side_index: 1, revision: 2 })
+    expect(corrected.cartridge_id).not.toBe(original.recorded_cartridge_id)
+
+    await page.getByRole('button', { name: '歷史與匯出', exact: true }).click()
+    const downloadEvent = page.waitForEvent('download')
+    await page.getByRole('button', { name: '匯出 JSON', exact: true }).click()
+    const exported = JSON.parse(readFileSync((await (await downloadEvent).path())!, 'utf8'))
+    expect(exported.draws.find((d: Draw) => d.id === original.id)).toMatchObject({ side: 'right', recorded_side: 'left', recorded_cartridge_id: original.recorded_cartridge_id, side_index: 1 })
+    expect(exported.audit_events.find((event: { action: string }) => event.action === 'update_draw')).toMatchObject({ old_data: { side: 'left' }, new_data: { side: 'right', recorded_side: 'left' } })
   } finally { await db.close() }
 })

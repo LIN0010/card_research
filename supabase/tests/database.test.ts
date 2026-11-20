@@ -92,6 +92,62 @@ describe('actual PostgreSQL migration and online commands (local PGlite)', () =>
     expect(events[1].new_data.card_number).toBe('A06-001')
     expect(events[2].new_data.draw_index).toBe(1)
   })
+  it('moves a left draw into the historical right batch without changing its original allocation', async () => {
+    const f = await fixture()
+    const moved = await append(f.segment.id, f.game.id, 'left', '049')
+    const existingRight = await append(f.segment.id, f.game.id, 'right', '001', 'four_star')
+    const game2 = await command('start_game', { segment_id: f.segment.id })
+    await append(f.segment.id, game2.id, 'left', '022')
+    await append(f.segment.id, game2.id, 'right', '016', 'four_star')
+    const laterBatch = await command('replace_cartridge', { segment_id: f.segment.id, side: 'right', certainty: 'uncertain' })
+    await append(f.segment.id, game2.id, 'right', '035')
+    const edited = await command('update_draw', { segment_id: f.segment.id, id: moved.id, revision: 1, side: 'right', card_number: moved.card_number, rarity: moved.rarity })
+    expect(edited).toMatchObject({
+      draw_index: 1, game_id: f.game.id, side: 'right', cartridge_id: existingRight.cartridge_id,
+      recorded_side: 'left', recorded_cartridge_id: moved.recorded_cartridge_id, side_index: 1, revision: 2,
+    })
+    expect(edited.cartridge_id).not.toBe(laterBatch.id)
+    const rows = (await db.query<any>('select * from public.draws where segment_id = $1 order by draw_index', [f.segment.id])).rows
+    expect(rows.map(d => d.draw_index)).toEqual([1, 2, 3, 4, 5])
+    expect(rows.filter(d => d.side === 'left').map(d => d.card_number)).toEqual(['022'])
+    expect(rows.filter(d => d.side === 'right').map(d => d.card_number)).toEqual(['049', '001', '016', '035'])
+    // Raw side_index values belong to original batches; duplicates here are valid.
+    expect(rows.filter(d => d.side === 'right').map(d => d.side_index)).toEqual([1, 1, 2, 1])
+    const event = (await db.query<any>("select * from public.audit_events where entity_id = $1 and action = 'update_draw'", [moved.id])).rows[0]
+    expect(event.old_data).toMatchObject({ side: 'left', cartridge_id: moved.cartridge_id })
+    expect(event.new_data).toMatchObject({ side: 'right', cartridge_id: existingRight.cartridge_id, recorded_side: 'left' })
+  })
+  it('preserves original fields through right, unknown and left corrections, then allocates the next raw index safely', async () => {
+    const f = await fixture()
+    const original = await append(f.segment.id, f.game.id, 'left', '049')
+    let revision = 1
+    for (const side of ['right', 'unknown', 'left', 'right']) {
+      const changed = await command('update_draw', { segment_id: f.segment.id, id: original.id, revision, side, card_number: '049', rarity: 'normal' })
+      expect(changed).toMatchObject({ side, draw_index: 1, recorded_side: 'left', recorded_cartridge_id: original.recorded_cartridge_id, side_index: 1, revision: ++revision })
+      if (side === 'unknown') expect(changed.cartridge_id).toBeNull()
+    }
+    const nextLeft = await append(f.segment.id, f.game.id, 'left', '022')
+    const nextRight = await append(f.segment.id, f.game.id, 'right', '001')
+    expect(nextLeft).toMatchObject({ draw_index: 2, side_index: 2 })
+    expect(nextRight).toMatchObject({ draw_index: 3, side_index: 1 })
+  })
+  it('denies source corrections and audit changes by another owner or direct table writes', async () => {
+    const f = await fixture()
+    const original = await append(f.segment.id, f.game.id, 'left', '049')
+    const payload = { segment_id: f.segment.id, id: original.id, revision: 1, side: 'right', card_number: '049', rarity: 'normal' }
+    await user(USER_B)
+    expect((await db.query('select * from public.draws')).rows).toHaveLength(0)
+    expect((await db.query('select * from public.audit_events')).rows).toHaveLength(0)
+    await expect(command('update_draw', payload)).rejects.toThrow('沒有權限')
+    await user(USER_A)
+    await expect(db.query("update public.draws set recorded_side = 'right' where id = $1", [original.id])).rejects.toThrow('permission denied')
+    await expect(db.query('delete from public.audit_events where entity_id = $1', [original.id])).rejects.toThrow('permission denied')
+    await user('')
+    await expect(command('update_draw', payload)).rejects.toThrow('請先登入')
+    await user(USER_A)
+    const row = (await db.query<any>('select * from public.draws where id = $1', [original.id])).rows[0]
+    expect(row).toMatchObject({ side: 'left', recorded_side: 'left', revision: 1 })
+  })
   it('creates a distinct uncertain cartridge batch without joining its sequence', async () => {
     const f = await fixture()
     const first = await append(f.segment.id, f.game.id, 'left', '049')
