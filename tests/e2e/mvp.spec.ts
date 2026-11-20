@@ -338,3 +338,86 @@ test('journal UI: responsive navigation, explicit sources, prefixes, compact car
     await expect(page.getByRole('button', { name: '開始抽卡', exact: true })).toBeEnabled()
   } finally { await db.close() }
 })
+
+test('same-name branches remain distinguishable across recording, management and history by store IDs', async ({ page }, testInfo) => {
+  const db = await attachDatabase(page)
+  async function seed(action: string, payload: object) {
+    const result = await db.query<{ value: { id: string } }>('select public.apply_command($1::uuid,$2,$3::jsonb) as value', [randomUUID(), action, JSON.stringify(payload)])
+    return result.rows[0].value
+  }
+  try {
+    const branches = []
+    for (const [location, card, version] of [['台北信義店', '049', 'AP6'], ['高雄左營店', '050', 'AP6'], ['', '001', 'A06']]) {
+      const store = await seed('create_store', { name: '卡片研究所', location })
+      const machine = await seed('create_machine', { store_id: store.id, machine_name: '店內左台', game_version: version })
+      const segment = await seed('create_segment', { machine_id: machine.id, label: '週末抽卡' })
+      const game = (await db.query<{ id: string }>('select id from public.games where segment_id = $1', [segment.id])).rows[0]
+      await seed('append_draw', { id: randomUUID(), segment_id: segment.id, game_id: game.id, side: 'left', card_number: card, rarity: 'normal' })
+      branches.push({ store, machine, segment, location, version })
+    }
+    await page.goto('/')
+    await login(page)
+    await selectMachine(page, branches[0].machine.id)
+    const status = page.getByRole('region', { name: '目前抽卡狀態' })
+    await expect(status.locator('.store-location')).toHaveText('台北信義店')
+    await page.locator('.session-switch > summary').click()
+    const machineSelect = page.getByLabel('目前機台')
+    await expect(machineSelect.locator('optgroup')).toHaveCount(3)
+    for (const branch of branches) {
+      const location = branch.location || '未設定地點'
+      await expect(machineSelect.locator(`option[value="${branch.machine.id}"]`)).toHaveText(`卡片研究所 · ${location}／店內左台 · ${branch.version}`)
+      await expect(machineSelect.locator(`optgroup[label="卡片研究所 · ${location}"]`)).toHaveCount(1)
+    }
+    await page.getByRole('button', { name: '完成切換', exact: true }).click()
+    await selectMachine(page, branches[1].machine.id)
+    await expect(status.locator('.store-location')).toHaveText('高雄左營店')
+    await expect(page.locator('.card-number')).toHaveText(['050'])
+    await draw(page, '右卡匣', 'AP6-022')
+    const saved = (await db.query<{ machine_id: string }>(`select s.machine_id from public.draws d
+      join public.observation_segments s on s.id = d.segment_id where d.card_number = 'AP6-022'`)).rows[0]
+    expect(saved.machine_id).toBe(branches[1].machine.id)
+    await selectMachine(page, branches[2].machine.id)
+    await expect(status.locator('.store-location')).toHaveText('未設定地點')
+    await expect(page.locator('.card-number')).toHaveText(['001'])
+    await selectMachine(page, branches[0].machine.id)
+    for (const [width, height] of [[320, 740], [390, 844], [1440, 1000]]) {
+      await page.setViewportSize({ width, height })
+      await expect(status.locator('.store-location')).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      if (width === 390) await status.screenshot({ path: testInfo.outputPath('store-location-mobile.png') })
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByRole('button', { name: '店家與機台', exact: true }).click()
+    const storeSelect = page.getByLabel('所屬店家')
+    await expect(storeSelect.locator(`option[value="${branches[1].store.id}"]`)).toHaveText('卡片研究所 · 高雄左營店')
+    await expect(storeSelect.locator(`option[value="${branches[2].store.id}"]`)).toHaveText('卡片研究所 · 未設定地點')
+    await storeSelect.selectOption(branches[1].store.id)
+    await page.getByLabel('機台名稱', { exact: true }).fill('新增測試機台')
+    await page.getByLabel('遊戲版本', { exact: true }).fill('AP6')
+    await page.getByRole('button', { name: '新增機台', exact: true }).click()
+    await expect(page.getByLabel('機台名稱', { exact: true })).toHaveValue('')
+    expect((await db.query<{ store_id: string }>("select store_id from public.machines where machine_name = '新增測試機台'")).rows[0].store_id).toBe(branches[1].store.id)
+    await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
+    await expect(page.locator('.history-context')).toHaveCount(4)
+    await expect(page.locator('.history-context').filter({ hasText: '台北信義店' })).toHaveCount(1)
+    await expect(page.locator('.history-context').filter({ hasText: '高雄左營店' })).toHaveCount(2)
+    await expect(page.locator('.history-context').filter({ hasText: '未設定地點' })).toHaveCount(1)
+    await page.getByLabel('機台篩選').selectOption(branches[1].machine.id)
+    await expect(page.locator('.card-number')).toHaveText(['050', 'AP6-022'])
+    await expect(page.getByLabel('抽卡場次篩選').locator(`option[value="${branches[1].segment.id}"]`)).toContainText('高雄左營店')
+    await page.getByLabel('機台篩選').selectOption(branches[0].machine.id)
+    await expect(page.locator('.card-number')).toHaveText(['049'])
+    await page.getByRole('button', { name: '店家與機台', exact: true }).click()
+    await page.getByLabel('店家名稱', { exact: true }).fill('卡片研究所')
+    await page.getByLabel('店家位置（選填）', { exact: true }).fill('高雄左營店')
+    page.once('dialog', async dialog => { expect(dialog.message()).toContain('可能重複建立'); await dialog.dismiss() })
+    await page.getByRole('button', { name: '新增店家', exact: true }).click()
+    expect((await db.query('select * from public.stores')).rows).toHaveLength(3)
+    await expect(page.getByLabel('店家位置（選填）')).toHaveValue('高雄左營店')
+    await page.getByLabel('店家位置（選填）').fill('台中西屯店')
+    await page.getByRole('button', { name: '新增店家', exact: true }).click()
+    await expect(page.getByLabel('店家名稱', { exact: true })).toHaveValue('')
+    expect((await db.query('select * from public.stores')).rows).toHaveLength(4)
+    expect((await db.query("select * from public.stores where name = '卡片研究所'")).rows).toHaveLength(4)
+  } finally { await db.close() }
+})

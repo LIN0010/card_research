@@ -2,6 +2,8 @@ import { useState } from 'react'
 import type { DataSet } from '../../lib/types'
 import type { Mutate } from '../../lib/useCommands'
 import { DrawList } from './DrawList'
+import { MachineOptions } from '../../components/MachineOptions'
+import { machineLabel } from '../../lib/storeLabels'
 
 export function History({ data, mutate, busy }: { data: DataSet; mutate: Mutate; busy: boolean }) {
   const [machine, setMachine] = useState('')
@@ -15,8 +17,12 @@ export function History({ data, mutate, busy }: { data: DataSet; mutate: Mutate;
     .sort((a, b) => a.segment_id.localeCompare(b.segment_id) || a.draw_index - b.draw_index)
   return <section className="panel"><h2>歷史紀錄</h2>
     <div className="grid gap-3 sm:grid-cols-2">
-      <label>機台篩選<select value={machine} onChange={e => { setMachine(e.target.value); setSegment(''); setGame('') }}><option value="">全部機台（各場次分開）</option>{data.machines.map(m => <option key={m.id} value={m.id}>{data.stores.find(s => s.id === m.store_id)?.name}／{m.machine_name}</option>)}</select></label>
-      <label>抽卡場次篩選<select value={segment} onChange={e => { setSegment(e.target.value); setGame('') }}><option value="">全部抽卡場次</option>{segments.map(s => <option key={s.id} value={s.id}>{s.label} · {new Date(s.started_at).toLocaleString('zh-TW')}</option>)}</select></label>
+      <label>機台篩選<select value={machine} onChange={e => { setMachine(e.target.value); setSegment(''); setGame('') }}><option value="">全部機台（各場次分開）</option><MachineOptions machines={data.machines} stores={data.stores} /></select></label>
+      <label>抽卡場次篩選<select value={segment} onChange={e => { setSegment(e.target.value); setGame('') }}><option value="">全部抽卡場次</option>{segments.map(s => {
+        const linkedMachine = data.machines.find(m => m.id === s.machine_id)
+        const context = linkedMachine ? machineLabel({ ...linkedMachine, game_version: s.game_version }, data.stores.find(store => store.id === linkedMachine.store_id)) : '未知機台'
+        return <option key={s.id} value={s.id}>{context}／{s.label} · {new Date(s.started_at).toLocaleString('zh-TW')}</option>
+      })}</select></label>
       {segment && <label>遊戲局數篩選<select value={game} onChange={e => setGame(e.target.value)}><option value="">全部局數</option>{data.games.filter(g => g.segment_id === segment).sort((a, b) => a.game_index - b.game_index).map(g => <option key={g.id} value={g.id}>第 {g.game_index} 局</option>)}</select></label>}
       <label>搜尋卡號<input value={query} onChange={e => setQuery(e.target.value)} placeholder="保留前綴或以部分卡號搜尋" /></label>
     </div>
