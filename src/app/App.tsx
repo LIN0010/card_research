@@ -87,7 +87,7 @@ export function App({ email, onLogout, repo = repository }: { email: string; onL
       {tab === 'manage' && <Management data={data} mutate={commands.mutate} busy={busy} onMachine={id => { setMachineId(id); setSegmentId('') }} />}
       {tab === 'record' && <RecordingPage data={data} machine={machine} segment={segment} game={game} segments={segments} mutate={commands.mutate} busy={busy} dirty={dirty} feedback={feedback} loading={loading} onDirty={setDirty} onMachine={selectMachine} onSegment={selectSegment} onManage={() => setTab('manage')} />}
       {tab === 'history' && <>
-        <section className="panel"><h2>匯出我的資料</h2><p className="muted">匯出前重新讀取全部分頁。CSV 包含已撤銷列及原始序號；JSON 另含完整關聯及操作歷史。CSV 為試算表安全會處理公式開頭文字，原文以 JSON 為準。</p><div className="actions mt-3"><button disabled={busy} onClick={() => void exportData('csv')}>匯出 CSV</button><button disabled={busy} onClick={() => void exportData('json')}>匯出 JSON</button></div></section>
+        <section className="panel"><h2>匯出我的資料</h2><p className="muted">匯出前重新讀取全部分頁。CSV 保留原始序號、缺口與卡號未知標記；JSON 另含完整關聯及有效紀錄的操作歷史。CSV 為試算表安全會處理公式開頭文字，原文以 JSON 為準。</p><div className="actions mt-3"><button disabled={busy} onClick={() => void exportData('csv')}>匯出 CSV</button><button disabled={busy} onClick={() => void exportData('json')}>匯出 JSON</button></div></section>
         <History data={data} mutate={commands.mutate} busy={busy} />
       </>}
     </main>

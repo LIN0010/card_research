@@ -311,3 +311,11 @@ footer span { color: #b9a2ce; padding-inline: .4rem; }
   .auth-page { padding-bottom: 2rem; }
 }
 @media (max-width: 359px) { .page-main { padding-inline: .6rem; } .panel { padding: .9rem; } .session-top { flex-wrap: wrap; } .cartridge-columns { gap: .45rem; } }
+
+.unknown-card-toggle { font-size: .76rem; color: #81718f; margin-bottom: .5rem; }
+.unknown-card-toggle input { accent-color: #9176b4; }
+.sequence-gap-notice { background: #fff7e9; border: 1px dashed #dbc69d; border-radius: 10px; color: #8d7148; font-size: .77rem; padding: .7rem .85rem; margin-bottom: .9rem; overflow-wrap: anywhere; }
+.legacy-cleanup { padding: 1rem; margin-block: 1rem; border: 1px solid #e6c7ce; border-radius: 13px; background: #fff6f7; }
+.legacy-cleanup h3 { font-size: .9rem; }
+.legacy-cleanup p { font-size: .78rem; color: #956d79; margin: .5rem 0 .8rem; }
+.legacy-cleanup button { color: #9b6577; border-color: #dcb8c4; }

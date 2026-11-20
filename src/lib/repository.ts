@@ -39,6 +39,9 @@ export const repository: Repository = {
     if (!data || typeof data !== 'object' || Array.isArray(data) || typeof data.id !== 'string') {
       throw new CommandError('回應格式不完整，請重試確認儲存結果', true)
     }
+    if (data.deleted === true && action !== 'delete_draw') {
+      throw new CommandError('此筆紀錄已永久刪除，不能重送或還原。請重新整理頁面後再記錄新的出卡。', false)
+    }
     return data as { id: string }
   },
 }

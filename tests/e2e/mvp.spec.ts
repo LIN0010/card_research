@@ -7,7 +7,7 @@ import type { Draw } from '../../src/lib/types'
 const USER = '00000000-0000-4000-8000-000000000001'
 // Test-only HTTP adapter: execute the real migration/RPC in local PostgreSQL.
 // Supabase Auth and PostgREST transport are simulated, not a hosted-service test.
-async function attachDatabase(page: Page, loseFirstAppendResponse = false) {
+async function attachDatabase(page: Page, loseFirstAppendResponse = false, options: { beforeUpgrade?: (db: PGlite) => Promise<void>; loseFirstDeleteResponse?: boolean } = {}) {
   const db = new PGlite()
   await db.exec(`create role anon; create role authenticated; create schema auth;
     create table auth.users(id uuid primary key);
@@ -15,6 +15,9 @@ async function attachDatabase(page: Page, loseFirstAppendResponse = false) {
     grant usage on schema auth, public to anon, authenticated;
     insert into auth.users values('${USER}');`)
   await db.exec(readFileSync(new URL('../../supabase/migrations/202611060001_mvp.sql', import.meta.url), 'utf8'))
+  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [USER])
+  await options.beforeUpgrade?.(db)
+  await db.exec(readFileSync(new URL('../../supabase/migrations/202611210001_permanent_delete_unknown_cards.sql', import.meta.url), 'utf8'))
   await db.exec('set role authenticated')
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [USER])
   const token = `${Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url')}.${Buffer.from(JSON.stringify({ sub: USER, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.test-signature`
@@ -35,6 +38,7 @@ async function attachDatabase(page: Page, loseFirstAppendResponse = false) {
           loseFirstAppendResponse = false
           await route.abort('connectionfailed'); return
         }
+        if (options.loseFirstDeleteResponse && body.p_action === 'delete_draw') { options.loseFirstDeleteResponse = false; await route.abort('connectionfailed'); return }
         await route.fulfill({ json: response.rows[0].value }); return
       }
       const table = url.pathname.replace('/rest/v1/', '')
@@ -135,22 +139,22 @@ test('mobile MVP: manage, record A/B across games, reload, relogin, edit, undo, 
     await page.getByRole('button', { name: '儲存修改', exact: true }).click()
     await expect(page.locator('.card-number').first()).toHaveText('AP6-049')
     page.on('dialog', dialog => dialog.accept())
-    await page.getByRole('button', { name: '撤銷上一筆', exact: true }).click()
-    await expect(page.locator('.draw-item').last()).toContainText('已撤銷')
-    await expect(page.locator('.draw-item').last()).toContainText('原始 #4')
+    await page.getByRole('button', { name: '刪除上一筆', exact: true }).click()
+    await expect(page.locator('.sequence-gap-notice')).toContainText('#4')
+    await expect(page.locator('.card-number')).toHaveCount(3)
     await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
-    await expect(page.locator('.draw-item')).toHaveCount(12)
+    await expect(page.locator('.draw-item')).toHaveCount(11)
     const jsonEvent = page.waitForEvent('download')
     await page.getByRole('button', { name: '匯出 JSON', exact: true }).click()
     const jsonDownload = await jsonEvent
     const json = JSON.parse(readFileSync((await jsonDownload.path())!, 'utf8'))
-    expect(json.draws).toHaveLength(12)
-    expect(json.draws.filter((d: { deleted_at: string | null }) => d.deleted_at)).toHaveLength(1)
-    expect(json.audit_events.filter((e: { action: string }) => e.action === 'void_draw')).toHaveLength(1)
+    expect(json.draws).toHaveLength(11)
+    expect(json.draws.filter((d: { deleted_at: string | null }) => d.deleted_at)).toHaveLength(0)
+    expect(json.audit_events.filter((e: { action: string }) => e.action === 'void_draw')).toHaveLength(0)
     const csvEvent = page.waitForEvent('download')
     await page.getByRole('button', { name: '匯出 CSV', exact: true }).click()
     const csv = readFileSync((await (await csvEvent).path())!, 'utf8')
-    expect(csv.split('\r\n')).toHaveLength(13)
+    expect(csv.split('\r\n')).toHaveLength(12)
     expect(csv).toContain('"AP6-049"')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     expect(errors).toEqual([])
@@ -212,11 +216,11 @@ test('correcting left to right updates both sequences after reload and preserves
     await expect(page.locator('.draw-item').first()).toContainText('來源已修正：左 → 右')
     await page.getByRole('button', { name: '左右卡匣', exact: true }).click()
     await expect(page.getByRole('region', { name: '左卡匣序列' }).locator('.card-number')).toHaveText(['022'])
-    await expect(page.getByRole('region', { name: '左卡匣序列' }).locator('.draw-item')).toContainText('有效顯示 #3／左 #1')
+    await expect(page.getByRole('region', { name: '左卡匣序列' }).locator('.draw-item')).toContainText('原始 #3 · 第 2 局 · 目前來源：左')
     await page.getByRole('button', { name: '左右卡匣', exact: true }).click()
     await expect(page.getByRole('region', { name: '右卡匣序列' }).locator('.card-number')).toHaveText(['049', '001'])
-    await expect(page.getByRole('region', { name: '右卡匣序列' }).locator('.draw-item').first()).toContainText('有效顯示 #1／右 #1')
-    await expect(page.getByRole('region', { name: '右卡匣序列' }).locator('.draw-item').last()).toContainText('有效顯示 #2／右 #2')
+    await expect(page.getByRole('region', { name: '右卡匣序列' }).locator('.draw-item').first()).toContainText('原始 #1 · 第 1 局 · 目前來源：右')
+    await expect(page.getByRole('region', { name: '右卡匣序列' }).locator('.draw-item').last()).toContainText('原始 #2 · 第 1 局 · 目前來源：右')
     await expect(page.getByRole('region', { name: '右卡匣序列' }).locator('.draw-item').first()).toContainText('原始側序：左批次 1 #1（僅供稽核）')
     const events = page.getByRole('region', { name: '右卡匣序列' }).locator('.draw-item').first().locator('.audit > ul > li')
     await expect(events).toHaveCount(2)
@@ -419,5 +423,110 @@ test('same-name branches remain distinguishable across recording, management and
     await expect(page.getByLabel('店家名稱', { exact: true })).toHaveValue('')
     expect((await db.query('select * from public.stores')).rows).toHaveLength(4)
     expect((await db.query("select * from public.stores where name = '卡片研究所'")).rows).toHaveLength(4)
+  } finally { await db.close() }
+})
+
+test('permanent deletion confirms, retries a lost response without restoring data, and preserves unknown card positions', async ({ page }, testInfo) => {
+  const db = await attachDatabase(page, false, { loseFirstDeleteResponse: true })
+  async function seed(action: string, payload: object) {
+    return (await db.query<{ value: { id: string } }>('select public.apply_command($1::uuid,$2,$3::jsonb) as value', [randomUUID(), action, JSON.stringify(payload)])).rows[0].value
+  }
+  try {
+    const store = await seed('create_store', { name: '永久刪除測試店' })
+    const machine = await seed('create_machine', { store_id: store.id, machine_name: '左台', game_version: 'AP6' })
+    const segment = await seed('create_segment', { machine_id: machine.id, label: '保留實際位置' })
+    await page.goto('/'); await login(page)
+    await draw(page, '左卡匣', 'AP6-049')
+    await page.getByRole('checkbox', { name: /卡號未知/ }).check()
+    await page.getByRole('radio', { name: '左卡匣', exact: true }).check()
+    await page.getByRole('button', { name: '儲存左卡匣出卡', exact: true }).click()
+    await expect(page.getByRole('checkbox', { name: /卡號未知/ })).not.toBeChecked()
+    await draw(page, '左卡匣', 'AP6-022')
+    const unknown = (await db.query<Draw>('select * from public.draws where segment_id=$1 and draw_index=2', [segment.id])).rows[0]
+    expect(unknown).toMatchObject({ card_number: null, card_number_unknown: true, draw_index: 2, side_index: 2 })
+    await expect(page.locator('.sequence-no')).toHaveText(['01', '02', '03'])
+    const row = page.locator(`[data-draw-id="${unknown.id}"]`)
+    await row.locator('.card-menu > summary').click()
+    page.once('dialog', async dialog => { expect(dialog.message()).toContain('永久刪除'); await dialog.dismiss() })
+    await row.getByRole('button', { name: '刪除', exact: true }).click()
+    expect((await db.query('select * from public.draws where id=$1', [unknown.id])).rows).toHaveLength(1)
+    page.once('dialog', dialog => dialog.accept())
+    await row.getByRole('button', { name: '刪除', exact: true }).click()
+    await expect(page.getByRole('button', { name: '重試確認儲存', exact: true })).toBeVisible()
+    expect((await db.query('select * from public.draws where id=$1', [unknown.id])).rows).toHaveLength(0)
+    expect((await db.query('select * from public.audit_events where entity_id=$1', [unknown.id])).rows).toHaveLength(0)
+    await page.getByRole('button', { name: '重試確認儲存', exact: true }).click()
+    await expect(page.locator('.sequence-no')).toHaveText(['01', '03'])
+    await expect(page.locator('.sequence-gap-notice')).toContainText('#2')
+    await expect(page.locator('.sequence-gap-notice')).toContainText('不可視為連續卡序')
+    await page.reload()
+    await expect(page.locator('.sequence-no')).toHaveText(['01', '03'])
+    await page.locator('.sequence-section').screenshot({ path: testInfo.outputPath('original-position-gap.png') })
+    await page.getByRole('checkbox', { name: /卡號未知/ }).check()
+    await page.getByRole('radio', { name: '左卡匣', exact: true }).check()
+    await page.getByRole('button', { name: '儲存左卡匣出卡', exact: true }).click()
+    await expect(page.getByRole('checkbox', { name: /卡號未知/ })).not.toBeChecked()
+    const laterUnknown = (await db.query<Draw>('select * from public.draws where segment_id=$1 and draw_index=4', [segment.id])).rows[0]
+    expect(laterUnknown).toMatchObject({ card_number: null, card_number_unknown: true, draw_index: 4, side_index: 4 })
+    await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
+    const downloadEvent = page.waitForEvent('download')
+    await page.getByRole('button', { name: '匯出 JSON', exact: true }).click()
+    const exported = JSON.parse(readFileSync((await (await downloadEvent).path())!, 'utf8'))
+    expect(exported.schema_version).toBe(2)
+    expect(exported.draws.map((draw: Draw) => draw.draw_index)).toEqual(expect.arrayContaining([1, 3, 4]))
+    expect(exported.draws.find((draw: Draw) => draw.id === laterUnknown.id)).toMatchObject({ card_number: null, card_number_unknown: true })
+    expect(exported.audit_events.some((event: { entity_id: string }) => event.entity_id === unknown.id)).toBe(false)
+    await page.getByRole('button', { name: '出卡紀錄', exact: true }).click()
+    const laterRow = page.locator(`[data-draw-id="${laterUnknown.id}"]`)
+    await laterRow.locator('.card-menu > summary').click()
+    await laterRow.getByRole('button', { name: '修改', exact: true }).click()
+    await page.locator('.edit-form').getByRole('checkbox', { name: /卡號未知/ }).uncheck()
+    await page.getByLabel('修改卡片編號').fill('AP6-14P')
+    await page.getByRole('button', { name: '儲存修改', exact: true }).click()
+    await expect(laterRow.locator('.card-number')).toHaveText('AP6-14P')
+    expect((await db.query<Draw>('select * from public.draws where id=$1', [laterUnknown.id])).rows[0]).toMatchObject({ draw_index: 4, side_index: 4, card_number_unknown: false })
+  } finally { await db.close() }
+})
+
+test('legacy soft-deleted data survives upgrade until the owner confirms cleanup and then leaves no cached card snapshots', async ({ page }) => {
+  let legacyId = ''
+  let activeId = ''
+  const db = await attachDatabase(page, false, { beforeUpgrade: async database => {
+    async function old(action: string, payload: object) {
+      return (await database.query<{ value: { id: string } }>('select public.apply_command($1::uuid,$2,$3::jsonb) as value', [randomUUID(), action, JSON.stringify(payload)])).rows[0].value
+    }
+    const store = await old('create_store', { name: '升級前的店家' })
+    const machine = await old('create_machine', { store_id: store.id, machine_name: '原有機台', game_version: 'AP6' })
+    const segment = await old('create_segment', { machine_id: machine.id, label: '既有資料' })
+    const game = (await database.query<{ id: string }>('select id from public.games where segment_id=$1', [segment.id])).rows[0]
+    activeId = randomUUID(); legacyId = randomUUID()
+    await old('append_draw', { id: activeId, segment_id: segment.id, game_id: game.id, side: 'left', card_number: 'KEEP-ACTIVE', rarity: 'normal' })
+    await old('append_draw', { id: legacyId, segment_id: segment.id, game_id: game.id, side: 'right', card_number: 'LEGACY-PRIVATE-CARD', rarity: 'normal' })
+    await old('void_draw', { id: legacyId, segment_id: segment.id, revision: 1 })
+  } })
+  try {
+    expect((await db.query('select * from public.draws')).rows).toHaveLength(2)
+    await page.goto('/'); await login(page)
+    await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
+    await expect(page.getByRole('checkbox', { name: '包含已撤銷紀錄', exact: true })).toHaveCount(0)
+    await expect(page.locator('.card-number')).toHaveText(['KEEP-ACTIVE'])
+    const cleanup = page.getByRole('region', { name: '舊撤銷紀錄清理' })
+    await expect(cleanup).toContainText('1 筆')
+    page.once('dialog', dialog => dialog.dismiss())
+    await cleanup.getByRole('button', { name: '永久清理舊撤銷紀錄', exact: true }).click()
+    expect((await db.query('select * from public.draws where id=$1', [legacyId])).rows).toHaveLength(1)
+    page.once('dialog', dialog => dialog.accept())
+    await cleanup.getByRole('button', { name: '永久清理舊撤銷紀錄', exact: true }).click()
+    await expect(cleanup).toHaveCount(0)
+    expect((await db.query('select * from public.draws where id=$1', [legacyId])).rows).toHaveLength(0)
+    expect((await db.query('select * from public.draws where id=$1', [activeId])).rows).toHaveLength(1)
+    expect((await db.query('select * from public.audit_events where entity_id=$1', [legacyId])).rows).toHaveLength(0)
+    await db.exec('reset role')
+    expect(JSON.stringify((await db.query('select request,result from app_private.operations')).rows)).not.toContain('LEGACY-PRIVATE-CARD')
+    await db.exec('set role authenticated')
+    await page.reload()
+    await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
+    await expect(page.getByRole('button', { name: '永久清理舊撤銷紀錄', exact: true })).toHaveCount(0)
+    await expect(page.locator('.card-number')).toHaveText(['KEEP-ACTIVE'])
   } finally { await db.close() }
 })

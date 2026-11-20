@@ -73,3 +73,18 @@ PostgreSQL 測試使用 PGlite 執行真實 migration、PL/pgSQL、約束及 RLS
 - 未修改 schema、RLS、RPC、持久化、登入、原始序號、稽核排序及匯出格式；不需新的 SQL。
 
 上述測試仍為本機 PGlite 與測試 Auth／HTTP adapter，並非託管 Supabase 或正式部署驗證。
+
+## 2026-11-21 永久刪除與卡號未知（台北）
+
+- `npm test`：50 項通過、0 失敗。包含 14 項原始 MVP migration 基準測試、10 項新 migration／永久刪除資料庫測試及 26 項前端／匯出測試。
+- `npm run build`：通過，包含 TypeScript 檢查。
+- Chromium E2E：7 項通過、0 失敗。原有操作、分店辨識、跨局順序及資料讀回回歸保留；新增刪除確認／回應斷線後重試、未知卡號佔位／補號、舊資料升級與確認清理流程。
+- 在已有有效及舊撤銷資料的 PostgreSQL 執行新 migration，確認升級不自動刪除資料；確認清理後只移除本人舊資料，其他使用者與有效卡片保留。
+- 驗證刪除後 draws 列與專屬 audit_events 消失，private request 不再保存原文，結果快照只保留 deleted metadata；重播原新增／修改請求不能取回卡片或還原同一 UUID。
+- 驗證全域／側序在刪除最後一筆、全部紀錄及舊資料清理後均不回退；UI 保留 01、03 等原始位置並明示缺口，未知卡號以 NULL 與標記佔位。
+- 驗證跨使用者／匿名權限、直接寫入拒絕、同號其他卡片與不同類型同 UUID 資料保留，以及 auth.users 刪除 cascade 不受新增 trigger 影響。
+- 已讀取手機缺口提示截圖；原有 320–1440px 版面檢查保留。未改動最初的 MVP migration 或登入邏輯。
+
+既有專案需手動執行 **202611210001_permanent_delete_unknown_cards.sql** 全文一次，不能重跑原 migration。新 migration 本身不自動清除舊撤銷資料；操作與刪除範圍詳見 [永久刪除與卡號未知](permanent-deletion.md)。
+
+驗證使用本機 PGlite 與測試傳輸層，未執行託管 Supabase migration 或正式部署；也不代表已做多連線併發壓力測試。平台備份／既有下載檔不在此應用刪除範圍。
