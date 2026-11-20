@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Dialog } from '../../components/Dialog'
 import { Icon } from '../../components/Icon'
 import type { Cartridge, DataSet, Segment } from '../../lib/types'
@@ -55,7 +55,12 @@ export function SegmentControls({ segment, data, mutate, busy }: { segment: Segm
   </details>
 }
 export function SessionActions({ segment, mutate, busy }: { segment: Segment; mutate: Mutate; busy: boolean }) {
-  if (segment.ended_at) return <span className="muted ended-label">這次抽卡已結束，紀錄會好好保留。</span>
-  return <><button className="primary" disabled={busy} onClick={() => { void mutate('start_game', { segment_id: segment.id }).catch(() => {}) }}><Icon name="plus" size={17} />下一局</button>
-    <button className="quiet-button" disabled={busy} onClick={() => { if (window.confirm('結束這次抽卡？所有紀錄會保留，之後可開始新場次。')) void mutate('close_segment', { segment_id: segment.id }).catch(() => {}) }}>結束抽卡</button></>
+  const helpId = useId()
+  if (segment.ended_at) return <span className="muted ended-label">本次紀錄已結束，紀錄會好好保留。</span>
+  return <><div className="session-action-guide"><button className="primary" aria-label="下一局（卡序延續）" aria-describedby={`${helpId}-next`} disabled={busy} onClick={() => { void mutate('start_game', { segment_id: segment.id }).catch(() => {}) }}><Icon name="plus" size={17} /><span>下一局<span className="action-qualifier">（卡序延續）</span></span></button>
+      <small id={`${helpId}-next`}>同一台機器繼續遊玩，中間沒有其他人抽卡。</small>
+    </div>
+    <div className="session-action-guide"><button className="end-session" aria-describedby={`${helpId}-end`} disabled={busy} onClick={() => { if (window.confirm('確定要結束本次紀錄嗎？\n離開、換機台或其他玩家接手時使用。\n所有紀錄會保留；若同一台機器繼續遊玩且中間沒有其他人抽卡，請選「下一局（卡序延續）」。')) void mutate('close_segment', { segment_id: segment.id }).catch(() => {}) }}>結束本次紀錄</button>
+      <small id={`${helpId}-end`}>離開、換機台或其他玩家接手時使用。</small>
+    </div></>
 }
