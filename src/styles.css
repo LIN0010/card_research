@@ -53,6 +53,8 @@ pre { overflow: auto; font-size: .72rem; max-height: 20rem; padding: .7rem; back
 .session-status::before { content: ''; position: absolute; width: 44px; height: 9px; background: #dcd0e9a6; border-radius: 2px; top: -5px; left: 26px; transform: rotate(-3deg); }
 .session-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .store-name { display: flex; align-items: center; gap: .35rem; color: #8c7c9e; font-size: .78rem; margin-bottom: .25rem; }
+.store-name > span { min-width: 0; overflow-wrap: anywhere; }
+.store-location { font-size: .72rem; color: #81718f; line-height: 1.6; margin: .1rem 0 .4rem; overflow-wrap: anywhere; }
 .machine-title { min-width: 0; }
 .machine-title h3 { font-size: 1.18rem; display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
 .live-tag { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .5rem; border-radius: 30px; color: #8b8292; background: #f0ecf2; font-size: .62rem; font-weight: 500; white-space: nowrap; }
@@ -212,6 +214,9 @@ pre { overflow: auto; font-size: .72rem; max-height: 20rem; padding: .7rem; back
 .choice input { accent-color: #9878b8; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .list li { padding: .8rem 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.list li > span { min-width: 0; overflow-wrap: anywhere; }
+.list li > button { flex-shrink: 0; }
+.history-context { overflow-wrap: anywhere; }
 .audit { font-size: .76rem; margin-top: .4rem; }
 .audit li { padding-block: .3rem; }
 .audit summary { font-size: .76rem; }

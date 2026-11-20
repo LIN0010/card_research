@@ -5,6 +5,7 @@ import { effectiveOrders, orderedDraws } from '../../lib/sequences'
 import { drawAuditHistory } from '../../lib/audit'
 import { rarityLabels, sideLabels, type DataSet, type Draw, type Rarity, type Side } from '../../lib/types'
 import type { Mutate } from '../../lib/useCommands'
+import { storeLabel } from '../../lib/storeLabels'
 
 function DrawEditor({ draw, mutate, busy, onClose }: { draw: Draw; mutate: Mutate; busy: boolean; onClose: () => void }) {
   const [card, setCard] = useState(draw.card_number)
@@ -57,7 +58,7 @@ export function DrawList({ draws, data, mutate, busy, context = false, compact =
     const editor = editing === d.id && !d.deleted_at && <DrawEditor key={`${d.id}-${d.revision}`} draw={d} mutate={mutate} busy={busy} onClose={() => setEditing(null)} />
     const displayOrder = (orderMode === 'side' ? orders.side : orders.overall).get(d.id)
     return <li key={d.id} className={`draw-item ${compact ? 'compact-draw' : ''} ${d.deleted_at ? 'voided' : ''}`} data-side={d.side} data-draw-id={d.id}>
-      {context && <p className="muted">{store?.name}／{machine?.machine_name} · {segment?.label}</p>}
+      {context && <p className="muted history-context">{storeLabel(store)}／{machine?.machine_name} · {segment?.game_version ?? machine?.game_version} · {segment?.label}</p>}
       {compact ? <>
         <div className="card-face"><span className="sequence-no" aria-label={d.deleted_at ? '已撤銷' : `顯示順序 ${displayOrder}`}>{d.deleted_at ? '—' : String(displayOrder).padStart(2, '0')}</span>
           <div className="card-summary"><strong className="card-number">{d.card_number}</strong><span className={`rarity rarity-${d.rarity}`}>{d.rarity !== 'unknown' && <Icon name="star" size={11} />}{rarityLabels[d.rarity]}</span></div>
