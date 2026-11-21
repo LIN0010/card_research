@@ -1,0 +1,36 @@
+name: Read-only function diagnostics
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: Full current main SHA; read-only diagnostics never repair or deploy
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: card-research-production
+  cancel-in-progress: false
+jobs:
+  diagnostics:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Compare function metadata in a read-only transaction
+        run: node scripts/deploy/function-diagnostics.mjs
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_CA_CERT: ${{ secrets.SUPABASE_DB_CA_CERT }}
