@@ -23,6 +23,12 @@ test('read-only probe proves exact CRLF hashes and inventories the official Stud
       evtname: 'ensure_rls',evtevent: 'ddl_command_end',evtenabled: 'O',owner: 'postgres',
       function_schema: 'public',function_name: 'rls_auto_enable',arguments: '',tags: ['CREATE TABLE','CREATE TABLE AS','SELECT INTO'],
     }])
+    await db.exec('create table public.rls_scope_public(id integer);create table app_private.rls_scope_private(id integer);')
+    const scope = (await db.query("select n.nspname as schema,c.relrowsecurity as enabled from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relname in ('rls_scope_public','rls_scope_private') order by n.nspname")).rows
+    assert.deepEqual(scope,[{schema:'app_private',enabled:false},{schema:'public',enabled:true}])
+    await db.exec('set role authenticated')
+    await assert.rejects(() => db.query('select public.rls_auto_enable()'),error => error.code === '0A000')
+    await db.exec('reset role')
     await db.exec("create or replace function public.apply_command(p_operation_id uuid,p_action text,p_payload jsonb) returns jsonb language sql as $$select '{}'::jsonb$$;")
     const changed = (await probe()).source_checks.find(row => row.name === 'apply_command')
     assert.equal(changed.matches_baseline_after_crlf_only,false)
