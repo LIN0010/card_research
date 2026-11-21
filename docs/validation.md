@@ -118,3 +118,12 @@ GitHub hosted runner 與實際 Supabase TLS／Session pooler、Vercel token 權�
 - SQL Editor 版本經本機實際執行驗證，source／configuration SHA256 與 Actions 報告一致；報告不輸出原始 source 或 GUC 值。修改內容、owner、grant option 或新增函式仍被原比對器拒絕。
 - build／TypeScript 與 actionlint 通過；未更動 Production workflow、catalog 比對、release、TLS／context guards、baseline hashes、應用 migration、src、Auth 或正式資料庫。
 - 新增 workflow 僅手動／main，沿用 production Secrets 與嚴格 TLS；沒有正式 repair、migration 或 Vercel token／部署。調查說明與安全 SQL 查詢見 [唯讀診斷](function-diagnostics.md)。
+
+## 2026-11-22 已驗證 CRLF 與官方 RLS 模板的比較修正（台北）
+
+- 使用者提供的正式唯讀 JSON 確認三個 raw SHA256 精確符合 CRLF baseline，僅換 CRLF→LF 後精確符合原 LF SHA256，且沒有 lone CR；rls_auto_enable 的來源雜湊、metadata、完整 PUBLIC／postgres ACL 與 ensure_rls 綁定亦符合固定官方模板。
+- 實作僅限三個已驗證 body hash 的換行相容，以及一個需完整來源／ACL／屬性／唯一綁定同時通過的平台模板物件。未知函式、新 body、實質空白／內容、安全 flags 或 grant／binding 變動仍拒絕，不學習 live hash。
+- `npm test`：55 項通過；`npm run build`：TypeScript 與 Vite 通過。完整 `npm run test:deployment`：70 項通過、0 失敗、0 略過；包含 45 項精確規則及拒絕案例。
+- 真 PostgreSQL 17＋Supabase CLI 在隔離的 loopback 測試庫重現 CRLF bodies 與官方 event trigger，完整 catalog 比對通過；額外明確 grant 會被拒絕；原資料保留，唯讀 session 仍拒絕 INSERT。原 history-only／pending-only／鎖測試保留。
+- 診斷保留 raw hash／bytes 與 exact flags，另列 LF hash／bytes、經驗證規則的比較結果、拒絕原因及 helper 完整 evidence，不輸出 source 原文或 history approval。
+- 沒有改動 Production workflow、context／TLS guards、release、原 migration hashes／SQL、src、Auth 或正式資料庫；沒有執行正式 workflow、repair、migration 或部署。新唯讀查詢與規則詳見 [比較規則](function-comparison-plan.md)。

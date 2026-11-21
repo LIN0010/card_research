@@ -1,6 +1,7 @@
 import { DeploymentError } from './error.mjs'
 import { PGlite } from '@electric-sql/pglite'
 import { createHash } from 'node:crypto'
+import { comparisonCatalog, containsPlatformFunction } from './function-policy.mjs'
 
 const scope = `n.nspname in ('public','app_private') and not exists
   (select 1 from pg_depend e where e.classid='pg_class'::regclass and e.objid=c.oid and e.deptype='e')`
@@ -54,6 +55,20 @@ const queries = {
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
     lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
     where (${functionScope}) and ${roles}`,
+  platformFunctionPrivileges: `select n.nspname as schema,p.proname as name,pg_get_function_identity_arguments(p.oid) as arguments,
+    ${roleName} as role,pg_get_userbyid(a.grantor) as grantor,a.privilege_type,a.is_grantable
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
+    lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+    where n.nspname='public' and p.proname='rls_auto_enable'`,
+  platformFunctionProperties: `select n.nspname as schema,p.proname as name,pg_get_function_identity_arguments(p.oid) as arguments,
+    p.prokind,p.pronargs,p.proretset,p.provariadic<>0 as has_variadic,p.prosupport::oid<>0 as has_support_function,
+    p.proargdefaults is null as no_defaults,p.probin is null as no_external_binary,p.procost,p.prorows
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='rls_auto_enable'`,
+  eventTriggers: `select e.evtname,e.evtevent,e.evtenabled,pg_get_userbyid(e.evtowner) as owner,
+    n.nspname as function_schema,p.proname as function_name,pg_get_function_identity_arguments(p.oid) as arguments,
+    array(select t::text from unnest(e.evttags) t order by 1) as tags
+    from pg_event_trigger e join pg_proc p on p.oid=e.evtfoid join pg_namespace n on n.oid=p.pronamespace
+    where e.evtname='ensure_rls' or n.nspname in ('public','app_private')`,
   privateSchemaGrants: `select n.nspname as schema, ${roleName} as role, a.privilege_type, a.is_grantable
     from pg_namespace n, lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a
     where n.nspname='app_private' and ${roles}`,
@@ -82,7 +97,12 @@ export async function expectedCatalog(migrations) {
 }
 
 export function assertCatalog(expected, actual) {
-  const differences = Object.keys(expected).filter(key => JSON.stringify(expected[key]) !== JSON.stringify(actual[key]))
+  // A helper explicitly introduced by an application migration is still required
+  // on the server; only a platform-only helper is optional relative to the MVP.
+  const preservePlatform = containsPlatformFunction(expected)
+  const before = comparisonCatalog(expected,{ preservePlatform })
+  const after = comparisonCatalog(actual,{ preservePlatform })
+  const differences = [...new Set([...Object.keys(before),...Object.keys(after)])].filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
   if (differences.length) throw new DeploymentError(`Database structure differs in: ${differences.join(', ')}. Stop; do not repair history or rerun old SQL. Investigate catalog drift manually.`)
 }
 

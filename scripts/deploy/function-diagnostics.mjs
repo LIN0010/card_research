@@ -1,7 +1,8 @@
 import pg from 'pg'
 import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { catalog, digest, expectedCatalog } from './catalog.mjs'
+import { assertCatalog, catalog, digest, expectedCatalog } from './catalog.mjs'
+import { sourceFingerprint } from './function-policy.mjs'
 import { baselineVersions, migrations, validateContext } from './plan.mjs'
 import { databaseConfig } from './production.mjs'
 import { DeploymentError } from './error.mjs'
@@ -14,12 +15,19 @@ const hashValue = value => ({ sha256: digest(typeof value === 'string' ? value :
 function safeFunction(row) {
   if (!row) return null
   const { prosrc,proconfig,...metadata } = row
-  return { ...metadata,source: hashValue(prosrc),configuration: hashValue(proconfig),empty_search_path: proconfig?.includes('search_path=""') ?? false }
+  return { ...metadata,source: sourceFingerprint(prosrc),configuration: hashValue(proconfig),empty_search_path: proconfig?.includes('search_path=""') ?? false }
 }
 
-// This report does not decide whether drift is safe. No allowlist or comparator changes.
+// Report raw differences and the result of the separately reviewed comparison
+// policy. Diagnostics never generate a history approval or invoke release.
 // Raw source and GUC values may contain embedded secrets, so only hashes are printed.
 export function functionReport(expected,actual) {
+  let catalogMatches = false
+  let comparisonFailure = null
+  try { assertCatalog(expected,actual);catalogMatches = true } catch (error) {
+    if (!(error instanceof DeploymentError)) throw error
+    comparisonFailure = error.message
+  }
   const before = new Map(expected.functions.map(row => [key(row),row]))
   const after = new Map(actual.functions.map(row => [key(row),row]))
   const changed = []
@@ -34,11 +42,12 @@ export function functionReport(expected,actual) {
     expected_function_count: before.size,actual_function_count: after.size,
     exact_functions_match: same(expected.functions,actual.functions),
     exact_function_grants_match: same(expected.functionGrants,actual.functionGrants),
+    catalog_matches_verified_policy: catalogMatches,catalog_comparison_failure: comparisonFailure,
     function_differences: changed,
     function_grants_added: actual.functionGrants.filter(row => !expected.functionGrants.some(item => same(row,item))),
     function_grants_missing: expected.functionGrants.filter(row => !actual.functionGrants.some(item => same(row,item))),
     expected_functions: expected.functions.map(safeFunction),expected_function_grants: expected.functionGrants,
-    verdict: 'DIAGNOSTIC ONLY: drift is not approved; deployment and history synchronization guards are unchanged.',
+    verdict: 'DIAGNOSTIC ONLY: repair, migration and deployment are not approved by this report.',
   }
 }
 
@@ -77,6 +86,8 @@ export async function collectDiagnostics(db,expected) {
     const extensions = (await db.query(`select e.extname,e.extversion,n.nspname as schema
       from pg_extension e join pg_namespace n on n.oid=e.extnamespace order by e.extname`)).rows
     return { ...functionReport(expected,actual),environment,
+      event_trigger_bindings: actual.eventTriggers,platform_function_properties: actual.platformFunctionProperties,
+      platform_function_privileges: actual.platformFunctionPrivileges,
       default_function_privileges: sorted(defaultFunctionPrivileges),
       all_role_function_privileges: sorted(functionPrivileges),effective_execute: sorted(effectiveExecute),extensions }
   } finally { await db.query('rollback') }
