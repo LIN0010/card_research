@@ -14,7 +14,7 @@ with expected(schema,name,lf_sha256,crlf_sha256) as (values
     pg_catalog.octet_length(pg_catalog.replace(p.prosrc,E'\r\n',E'\n')) as lf_bytes,
     pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc,'UTF8')),'hex') as raw_sha256,
     pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\r\n',E'\n'),'UTF8')),'hex') as lf_sha256,
-    pg_catalog.position(E'\r' in pg_catalog.replace(p.prosrc,E'\r\n',E'\n'))>0 as has_lone_cr
+    pg_catalog.strpos(pg_catalog.replace(p.prosrc,E'\r\n',E'\n'),E'\r')>0 as has_lone_cr
   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace
   where (n.nspname,p.proname) in (select schema,name from expected)
 ), source_checks as (
@@ -48,6 +48,9 @@ select pg_catalog.jsonb_build_object(
   'source_checks',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(s) order by s.schema,s.name,s.arguments) from source_checks s),'[]'::jsonb),
   'platform_function',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(p)-array['oid','proowner','proacl','proconfig'] order by p.arguments) from platform p),'[]'::jsonb),
   'platform_search_path_is_pg_catalog',coalesce((select pg_catalog.bool_and(p.proconfig=array['search_path=pg_catalog']) from platform p),false),
+  'official_studio_source_ref','https://github.com/supabase/supabase/blob/4ead4b092ee7e5ad4def2cd295b14492db12720b/apps/studio/components/interfaces/Database/Triggers/EventTriggersList/EventTriggers.constants.ts',
+  'official_studio_lf_sha256','325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9',
+  'platform_matches_official_studio_after_crlf',coalesce((select pg_catalog.bool_and(p.lf_sha256='325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9') from platform p),false),
   'platform_grants',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(g) order by g.role,g.grantor) from platform_grants g),'[]'::jsonb),
   'event_trigger_bindings',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(b) order by b.evtname) from bindings b),'[]'::jsonb)
 ) as readonly_verification;
