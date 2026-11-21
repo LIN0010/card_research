@@ -488,6 +488,55 @@ test('permanent deletion confirms, retries a lost response without restoring dat
   } finally { await db.close() }
 })
 
+test('history hides empty sessions after deletion while retaining populated gaps and database sessions', async ({ page }) => {
+  const db = await attachDatabase(page)
+  async function seed(action: string, payload: object) {
+    return (await db.query<{ value: { id: string } }>('select public.apply_command($1::uuid,$2,$3::jsonb) as value', [randomUUID(), action, JSON.stringify(payload)])).rows[0].value
+  }
+  try {
+    const store = await seed('create_store', { name: '歷史顯示測試店' })
+    const machine = await seed('create_machine', { store_id: store.id, machine_name: '左台', game_version: 'AP6' })
+    const empty = await seed('create_segment', { machine_id: machine.id, label: '已結束空場次' })
+    const emptyGame = (await db.query<{ id: string }>('select id from public.games where segment_id=$1', [empty.id])).rows[0]
+    const removed = await seed('append_draw', { id: randomUUID(), segment_id: empty.id, game_id: emptyGame.id, side: 'left', card_number: 'AP6-050', rarity: 'normal' })
+    await seed('delete_draw', { id: removed.id, segment_id: empty.id, revision: 1, confirmed: true })
+    await seed('close_segment', { segment_id: empty.id })
+    const populated = await seed('create_segment', { machine_id: machine.id, label: '保留缺口場次' })
+    const game = (await db.query<{ id: string }>('select id from public.games where segment_id=$1', [populated.id])).rows[0]
+    const ids: string[] = []
+    for (const card of ['AP6-049', 'AP6-022', 'AP6-14P']) {
+      ids.push((await seed('append_draw', { id: randomUUID(), segment_id: populated.id, game_id: game.id, side: 'left', card_number: card, rarity: 'normal' })).id)
+    }
+    await seed('delete_draw', { id: ids[1], segment_id: populated.id, revision: 1, confirmed: true })
+    await seed('close_segment', { segment_id: populated.id })
+    await seed('create_segment', { machine_id: machine.id, label: '進行中空場次' })
+    const sessionsBefore = (await db.query('select * from public.observation_segments order by id')).rows
+    const gamesBefore = (await db.query('select * from public.games order by id')).rows
+    await page.goto('/'); await login(page)
+    await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
+    await expect(page.getByRole('option', { name: /已結束空場次/ })).toHaveCount(0)
+    await expect(page.getByRole('option', { name: /進行中空場次/ })).toHaveCount(1)
+    await expect(page.locator('.sequence-gap-notice')).toHaveCount(1)
+    await expect(page.locator('.sequence-gap-notice')).toContainText('保留缺口場次 · 原始序號缺口：#2。')
+    await page.getByLabel('抽卡場次篩選').selectOption(populated.id)
+    await page.getByLabel('遊戲局數篩選').selectOption(game.id)
+    for (const id of [ids[0], ids[2]]) {
+      page.once('dialog', dialog => dialog.accept())
+      await page.locator(`[data-draw-id="${id}"]`).getByRole('button', { name: '刪除', exact: true }).click()
+      await expect(page.locator(`[data-draw-id="${id}"]`)).toHaveCount(0)
+    }
+    await expect(page.getByText('尚無抽卡紀錄', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('抽卡場次篩選')).toHaveCount(0)
+    await expect(page.locator('.sequence-gap-notice')).toHaveCount(0)
+    expect((await db.query('select * from public.observation_segments order by id')).rows).toEqual(sessionsBefore)
+    expect((await db.query('select * from public.games order by id')).rows).toEqual(gamesBefore)
+    await page.reload()
+    await page.getByRole('button', { name: '歷史紀錄', exact: true }).click()
+    await expect(page.getByText('尚無抽卡紀錄', { exact: true })).toBeVisible()
+    await expect(page.locator('.sequence-gap-notice')).toHaveCount(0)
+  } finally { await db.close() }
+})
+
 test('legacy soft-deleted data survives upgrade until the owner confirms cleanup and then leaves no cached card snapshots', async ({ page }) => {
   let legacyId = ''
   let activeId = ''
