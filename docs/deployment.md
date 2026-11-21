@@ -76,6 +76,8 @@ Vite 公開 URL／key 會進瀏覽器 bundle；它們即使存成 Secrets 也不
 
 若 verify-history 回報 functions／functionGrants 差異，先依 [函式唯讀診斷](function-diagnostics.md) 取得逐項事實；不要直接 repair、重跑 SQL 或將差異視為平台預設而忽略。
 
+已驗證的 CRLF／LF 與單一官方 RLS 模板依 [精確比較規則](function-comparison-plan.md) 處理。來源、完整 ACL、metadata 或 event trigger 綁定不符仍會停止，沒有全面忽略額外函式。
+
 正式庫已手動套用這兩份 SQL：
 
 - `202611060001_mvp.sql`

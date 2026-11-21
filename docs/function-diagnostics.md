@@ -5,9 +5,9 @@ Run [44930592951](https://github.com/LIN0010/card_research/actions/runs/44930592
 ## 已確認與尚未確認
 
 - GitHub 顯示前置 Checks 全數成功，正式網站建置跳過，production 在結構驗證失敗。依該 commit 的執行順序，錯誤發生在任何 repair／push／deploy 前。
-- 目前錯誤只有類別名稱，沒有逐函式或 ACL 差異。雲端工作區沒有正式 Supabase 憑證／connector；不能從既有紀錄確認哪個正式函式不同。完整 job log 的下載端點另受目前網路政策限制，但原程式本來就不會記錄逐項資料。
+- 該次舊錯誤只有類別名稱；後續使用者提供唯讀結果，已驗證應用 source 僅差 CRLF，以及官方 RLS helper 的精確來源、ACL 與 binding。已採用的窄範圍規則見 [驗證與比較規則](function-comparison-plan.md)。工作區沒有取得正式憑證或代為寫入正式庫。
 - 比對範圍涵蓋 public／app_private 的所有非 extension 成員函式，並不只有這三個應用函式。額外函式、同名不同 signature、參數名稱、owner、函式內容、language、security definer、search_path、其他 flags 都可能使 functions 不符。
-- functionGrants 比較 PUBLIC／anon／authenticated 的權限與 grant option；service_role 單獨多出的 grant 不在該比較範圍，不能單靠它解釋此錯誤。
+- 一般 functionGrants 比較 PUBLIC／anon／authenticated；官方 helper 另以完整 ACL 檢查所有角色。已確認的 helper profile 只有 PUBLIC／postgres，任何額外明確 grant（包含 service_role）都拒絕。
 - [Supabase 公開初始化程式](https://github.com/supabase/postgres/blob/c85422318302fae317c8eb25d47b9abc810d61f0/migrations/db/init-scripts/00000000000000-initial-schema.sql#L39) 確實設定 public schema 的預設函式 grants；這是公開版本的背景資料，不代表正式專案一定使用該版本。
 - 本機已分別重現 public-schema 及 global 的常見 default EXECUTE grants，再執行兩份原 migration。三個應用函式與受比較的 grants 均符合 baseline：明確 REVOKE／GRANT 會收斂這些預設權限。因此「只有常見預設 grants」不足以重現此次失敗。
 - 在本機新增一個不屬於 extension 的 public helper，則可同時重現 functions、functionGrants 失敗；這只是可能機制，不能推論正式庫確實多了 helper，更不能自動視為安全。
@@ -45,13 +45,13 @@ rollback;
 
 ## 方案 B：GitHub Actions 對照報告
 
-本 PR 新增獨立的 **Read-only function diagnostics** workflow；沒有改動 Production workflow 或既有 catalog 比對器。
+獨立的 **Read-only function diagnostics** workflow 仍只做診斷。比較器現在按已驗證文件處理兩種精確情況；Production 的執行流程、context／TLS／history 確認機制不變。
 
 1. 審查並合併此 PR 後，在 Actions 選 Read-only function diagnostics → Run workflow，branch 選 main，expected_commit 填當時完整 main SHA。
 2. 使用既有 production environment 的 SUPABASE_DB_URL／PROJECT_REF／CA_CERT；不新增憑證，不需要貼出任何金鑰，也不傳 Vercel token。
 3. workflow 限定手動、main 與最新 SHA，與 Production 共用 concurrency group，連線仍嚴格驗證 TLS。只有本機 PGlite 空白參考庫執行既有 SQL 來建立 baseline；正式 session 與明確 snapshot 交易都設成 read-only，最後 ROLLBACK，正式連線沒有 Supabase CLI、repair、push、部署或業務 RPC 呼叫。
 4. Job Summary 顯示 expected／actual 函式數、逐項 unexpected／missing／changed、changed fields、source／config 雜湊、權限 added／missing、有效 EXECUTE／schema USAGE、default privileges 及 extension 版本。
-5. 本 workflow 成功只代表報告採集成功；即使顯示 drift，也不會產生 Verified plan 或任何可用來同步 history 的 approval，更不會將差異列入允許清單。Actions log 在公開 repo 可被閱讀；預設只輸出 metadata 與 hash，不上傳完整 source artifact。
+5. 報告同時保留 raw 的 exact_functions_match／exact_function_grants_match，另列 catalog_matches_verified_policy 與拒絕原因；不要把 raw 不同誤讀成規則已略過所有差異。本 workflow 成功只代表報告採集成功，不會產生 history approval。Actions log 在公開 repo 可被閱讀；預設只輸出 metadata 與 hash，不上傳完整 source artifact。
 
 ## 如何判斷下一步
 
@@ -61,6 +61,6 @@ rollback;
 | source 或 arguments 不同 | 私下比對第二份 migration 最終定義，區分手動格式／版本差異、舊 RPC 或真正內容變更；hash 不同本身不證明是格式差異。不要重播 migration。 |
 | security definer、owner、proconfig 或 flags 不同 | 屬於實際 metadata 差異，需安全審查，不以「平台預設」概括。 |
 | anon／PUBLIC 或 private helper 的 EXECUTE、grant option 不同 | 確認明確 REVOKE／GRANT、繼承權限與 schema USAGE。這次不會自動 REVOKE／GRANT 或修復正式庫。 |
-| 只有 service_role 額外 grant | 該角色本來不在 functionGrants 的比較範圍；繼續找真正影響範圍內的差異。 |
+| 只有 service_role 額外 grant | 一般 functionGrants 不比較它；但官方 RLS helper 的完整 ACL 規則會拒絕它，不能動態擴大 profile。 |
 
 調查期間維持自動化開關為 false，暫不執行 sync-history 或 deploy-reviewed。取得事實後再決定是否需要獨立修正 PR；本次不重跑舊 SQL、不改正式函式／權限、不放寬比對、不強制 applied，保留所有資料與帳號。
