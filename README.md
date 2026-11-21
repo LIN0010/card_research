@@ -8,7 +8,7 @@
 
 ## 啟動
 
-需要 Node.js 22.12 以上（建議 24 LTS）。先依 [設定教學](docs/setup.md) 設定 Supabase。既有 MVP 專案只執行 [本次升級 migration](supabase/migrations/202611210001_permanent_delete_unknown_cards.sql)，不要重跑初始化；全新空白專案才依序執行 MVP migration 與本次升級。
+需要 Node.js 22.12 以上（建議 24 LTS）。先依 [設定教學](docs/setup.md) 設定 Supabase。既有正式庫已手動套用兩份 migration 時，依 [自動部署設定](docs/deployment.md) 驗證並同步 history，不可重跑 SQL；全新空白專案才依序初始化與升級。
 
 ```bash
 npm ci
@@ -51,3 +51,6 @@ npm run test:e2e
 - RLS 與複合外鍵隔離私人資料，前端不能直接修改資料表。
 
 永久刪除升級及手動 SQL 步驟見 [永久刪除與卡號未知](docs/permanent-deletion.md)。詳見 [架構文件](docs/architecture.md)。原 `docs/database-schema.draft.sql` 已改為遷移來源說明，不再是可執行的舊 schema。
+## 自動部署
+
+PR 驗證與 main 的 Supabase migration → Vercel 部署流程、必要 Secrets、Vercel Git 競速處理及既有 migration history 的一次性同步，見 [部署設定](docs/deployment.md)。正式自動化預設關閉；已手動執行的兩份 SQL 不可重跑。

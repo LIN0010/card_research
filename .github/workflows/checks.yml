@@ -1,0 +1,53 @@
+name: Checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: Build, database and security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:526f86d93c6ea08fd3f1fe5605650cacc781b2c6013169a0ad8f42c7d3d84f32
+        env:
+          POSTGRES_DB: ci_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            scripts/deploy/tools/package-lock.json
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
+        with:
+          version: 2.67.1
+      - run: npm ci --ignore-scripts
+      - run: npm ci --prefix scripts/deploy/tools --ignore-scripts
+      - run: npm run security:check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - run: npm audit --audit-level=high
+      - run: npm audit --prefix scripts/deploy/tools --audit-level=high
+      - run: scripts/deploy/tools/node_modules/@vercel/vc-native-linux-x64/bin/vercel --version
+      - run: npm test
+      - run: npm run test:deployment
+        env:
+          CI_DATABASE_URL: postgres://postgres:local-ci-only@127.0.0.1:5432/ci_test
+          REQUIRE_CLI_TESTS: 'true'
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

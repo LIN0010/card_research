@@ -1,0 +1,7 @@
+# Enable "Require review from Code Owners" in main branch protection.
+/.github/ @LIN0010
+/supabase/ @LIN0010
+/scripts/deploy/ @LIN0010
+/vercel.json @LIN0010
+/package.json @LIN0010
+/package-lock.json @LIN0010

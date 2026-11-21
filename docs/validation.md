@@ -97,3 +97,15 @@ PostgreSQL 測試使用 PGlite 執行真實 migration、PL/pgSQL、約束及 RLS
 - 刪除最後一張卡後，若原先選取的已結束場次從選單消失，畫面回到全部場次並忽略原遊戲局數篩選，避免篩選卡住。
 - `npm test`：55 項通過；`npm run build`：通過；Chromium E2E：8 項通過。新增 5 項 History 元件測試與 1 項瀏覽器流程，驗證空場次隱藏、真實缺口保留、空白提示及重新整理；另確認出卡刪除前後場次、局數及原始計數資料完全相同。
 - 未修改資料庫、RPC、RLS 或 migration；本次不需要執行 SQL。瀏覽器回歸使用本機 PGlite 與測試 Auth／HTTP adapter，未部署正式網站或操作託管 Supabase。
+
+## 2026-11-21 自動部署流程（台北）
+
+- `npm ci --ignore-scripts` 與獨立 Vercel native 工具的乾淨安裝通過。原有 55 項測試於 Vitest 5.1.1 通過，`npm run build` 含 TypeScript 檢查通過，Chromium E2E 8 項通過。
+- `npm run test:deployment` 完整 17 項通過、0 略過：包含真 PostgreSQL 17 容器及固定 Supabase CLI 2.67.1，先驗證兩份既有 migration 結構，再 repair history，確認原本店家與帳號資料不變；dry-run 不改 history，push 僅新增測試用 migration，第二次 push 不重播舊 SQL。
+- 驗證跨連線 advisory lock 互斥與成功／失敗後釋放；實際變更 RLS、直接寫入權限、trigger 與 RPC 內容時，catalog 比對會拒絕。所有操作只發生於本機隨機測試資料庫。
+- 部署單元測試確認 baseline 缺漏、未知／不連續 history、結構差異、未額外審查、高風險計畫變更、migration 失敗、後驗證失敗、Vercel Git／未完成部署及 main 檢查失敗時阻止後續網站發布；確認已有 migration 會略過，sync-history 不會呼叫 db push。
+- root 全部依賴及獨立 native 部署工具 `npm audit --audit-level=high` 均通過，掃描結果均為 0 vulnerabilities；升級測試工具以排除舊 dev 依賴已公告漏洞。沒有隱藏 dev audit 或啟用付費掃描服務。
+- migration／常見憑證安全檢查、actionlint 1.7.12 workflow 語法檢查通過。Actions 固定 commit，CLI／工具固定版本及鎖檔；正式步驟預設不啟用。
+- 此變更未修改 src、兩份既有 migration、Auth 或 RLS，亦未建立新應用 SQL migration。未對正式 Supabase 執行 verify／repair／push、未啟用正式 workflow、未修改外部 Vercel 設定或部署。
+
+GitHub hosted runner 與實際 Supabase TLS／Session pooler、Vercel token 權限及線上發佈仍待使用者依 [部署設定](deployment.md) 完成。測試不能宣稱已對正式環境連線成功。

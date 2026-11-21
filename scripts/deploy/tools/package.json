@@ -1,0 +1,8 @@
+{
+  "name": "card-research-deployment-tools",
+  "private": true,
+  "description": "Pinned official native Vercel CLI for Linux x64 Actions runners; static prebuilt deployments only",
+  "dependencies": {
+    "@vercel/vc-native-linux-x64": "66.6.0"
+  }
+}
