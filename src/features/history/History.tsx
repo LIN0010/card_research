@@ -12,24 +12,32 @@ export function History({ data, mutate, busy }: { data: DataSet; mutate: Mutate;
   const [segment, setSegment] = useState('')
   const [game, setGame] = useState('')
   const [query, setQuery] = useState('')
-  const segments = data.observation_segments.filter(s => !machine || s.machine_id === machine)
-  const segmentIds = new Set(segments.filter(s => !segment || s.id === segment).map(s => s.id))
-  const draws = data.draws.filter(d => segmentIds.has(d.segment_id) && (!game || d.game_id === game) && !d.deleted_at && (d.card_number_unknown ? '卡號未知' : d.card_number ?? '').toLowerCase().includes(query.toLowerCase()))
+  const activeDraws = data.draws.filter(d => !d.deleted_at)
+  const populatedSegmentIds = new Set(activeDraws.map(d => d.segment_id))
+  const segments = data.observation_segments.filter(s => (!machine || s.machine_id === machine) && (!s.ended_at || populatedSegmentIds.has(s.id)))
+  // A refresh after deleting the last card can remove the selected closed session.
+  const selectedSegment = segments.some(s => s.id === segment) ? segment : ''
+  const selectedGame = selectedSegment ? game : ''
+  const visibleSegments = segments.filter(s => !selectedSegment || s.id === selectedSegment)
+  const segmentIds = new Set(visibleSegments.map(s => s.id))
+  const draws = activeDraws.filter(d => segmentIds.has(d.segment_id) && (!selectedGame || d.game_id === selectedGame) && (d.card_number_unknown ? '卡號未知' : d.card_number ?? '').toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => a.segment_id.localeCompare(b.segment_id) || a.draw_index - b.draw_index)
   return <section className="panel"><h2>歷史紀錄</h2>
+    {activeDraws.length ? <>
     <div className="grid gap-3 sm:grid-cols-2">
       <label>機台篩選<select value={machine} onChange={e => { setMachine(e.target.value); setSegment(''); setGame('') }}><option value="">全部機台（各場次分開）</option><MachineOptions machines={data.machines} stores={data.stores} /></select></label>
-      <label>抽卡場次篩選<select value={segment} onChange={e => { setSegment(e.target.value); setGame('') }}><option value="">全部抽卡場次</option>{segments.map(s => {
+      <label>抽卡場次篩選<select value={selectedSegment} onChange={e => { setSegment(e.target.value); setGame('') }}><option value="">全部抽卡場次</option>{segments.map(s => {
         const linkedMachine = data.machines.find(m => m.id === s.machine_id)
         const context = linkedMachine ? machineLabel({ ...linkedMachine, game_version: s.game_version }, data.stores.find(store => store.id === linkedMachine.store_id)) : '未知機台'
         return <option key={s.id} value={s.id}>{context}／{s.label} · {new Date(s.started_at).toLocaleString('zh-TW')}</option>
       })}</select></label>
-      {segment && <label>遊戲局數篩選<select value={game} onChange={e => setGame(e.target.value)}><option value="">全部局數</option>{data.games.filter(g => g.segment_id === segment).sort((a, b) => a.game_index - b.game_index).map(g => <option key={g.id} value={g.id}>第 {g.game_index} 局</option>)}</select></label>}
+      {selectedSegment && <label>遊戲局數篩選<select value={selectedGame} onChange={e => setGame(e.target.value)}><option value="">全部局數</option>{data.games.filter(g => g.segment_id === selectedSegment).sort((a, b) => a.game_index - b.game_index).map(g => <option key={g.id} value={g.id}>第 {g.game_index} 局</option>)}</select></label>}
       <label>搜尋卡號<input value={query} onChange={e => setQuery(e.target.value)} placeholder="保留前綴或以部分卡號搜尋" /></label>
     </div>
     <p className="muted mb-3">符合 {draws.length} 筆；每筆序號只屬於自己的抽卡場次，不跨機台串接。</p>
     <LegacyCleanup data={data} mutate={mutate} busy={busy} />
-    {segments.filter(s => !segment || s.id === segment).map(s => <SequenceGaps key={s.id} data={data} segmentId={s.id} />)}
+    {visibleSegments.filter(s => populatedSegmentIds.has(s.id)).map(s => <SequenceGaps key={s.id} data={data} segmentId={s.id} />)}
     <DrawList draws={draws} data={data} mutate={mutate} busy={busy} context />
+    </> : <div className="empty"><p>尚無抽卡紀錄</p></div>}
   </section>
 }
