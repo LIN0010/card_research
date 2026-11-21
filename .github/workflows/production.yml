@@ -1,0 +1,83 @@
+name: Production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Verify history first; sync never replays old SQL. Deploy modes run only on main.
+        type: choice
+        options: [verify-history, sync-history, deploy, deploy-reviewed]
+        default: verify-history
+        required: true
+      expected_commit:
+        description: Full current main commit SHA (40 characters)
+        type: string
+        required: true
+      approval:
+        description: Exact verified plan SHA256 for sync-history or separately reviewed migration deployment
+        type: string
+        required: false
+permissions:
+  contents: read
+# All production modes share one queue. Never cancel a migration already running.
+concurrency:
+  group: card-research-production
+  cancel-in-progress: false
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+  reviewed-migrations:
+    needs: checks
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.mode == 'deploy-reviewed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production-migration-review
+    steps:
+      - run: echo 'Separately reviewed main migration plan approved; production job will revalidate commit and fingerprint.'
+  production:
+    needs: [checks, reviewed-migrations]
+    if: always() && !cancelled() && needs.checks.result == 'success' && (needs.reviewed-migrations.result == 'success' || needs.reviewed-migrations.result == 'skipped') && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.PRODUCTION_AUTOMATION_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            scripts/deploy/tools/package-lock.json
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
+        with:
+          version: 2.67.1
+      - run: npm ci --ignore-scripts
+      - run: npm ci --prefix scripts/deploy/tools --ignore-scripts
+      # Only public Vite settings enter this build; database/deploy credentials are not build env vars.
+      - name: Build production website
+        if: github.event_name == 'push' || startsWith(inputs.mode, 'deploy')
+        run: |
+          node scripts/deploy/frontend.mjs
+          npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      - name: Verify, migrate then deploy (serialized)
+        run: node scripts/deploy/production.mjs
+        env:
+          DEPLOY_MODE: ${{ inputs.mode || 'deploy' }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          PLAN_APPROVAL: ${{ inputs.approval }}
+          AUTOMATION_ENABLED: ${{ vars.PRODUCTION_AUTOMATION_ENABLED }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_CA_CERT: ${{ secrets.SUPABASE_DB_CA_CERT }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

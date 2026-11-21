@@ -12,6 +12,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:deployment": "node --test tests/deployment/*.test.mjs",
+    "security:check": "node scripts/deploy/security-check.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "test:e2e": "playwright test",
     "test:e2e:serve": "vite build --outDir .e2e-dist && vite preview --outDir .e2e-dist --host 127.0.0.1 --port 5174 --strictPort"
@@ -34,8 +36,10 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.0",
     "jsdom": "^27.0.0",
+    "pg": "8.23.1",
     "typescript": "~5.9.3",
     "vite": "^7.2.0",
-    "vitest": "^3.2.4"
+    "vitest": "5.1.1",
+    "yaml": "2.9.1"
   }
 }

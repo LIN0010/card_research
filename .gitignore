@@ -6,6 +6,9 @@ dist/
 *.tsbuildinfo
 coverage/
 .supabase/
+.vercel/
+supabase/.temp/
+supabase/.branches/
 test-results/
 playwright-report/
 .e2e-dist/

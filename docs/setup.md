@@ -20,6 +20,8 @@ Vite 固定使用 5173；若埠被占用會報錯，不會默默改到其他埠�
 
 ## 2. Supabase 資料庫設定
 
+**準備啟用自動部署且已手動執行兩份 migration 的現有正式庫：請改依 [自動部署設定](deployment.md) 驗證並同步 history，不要再貼 SQL。** 下列 SQL Editor 步驟只適用尚未自動化的初始化／升級情境。
+
 **既有 MVP 專案：只執行 `supabase/migrations/202611210001_permanent_delete_unknown_cards.sql` 全文一次，不要重跑最初的 MVP migration。** 詳細步驟與永久刪除範圍見 [永久刪除與卡號未知](permanent-deletion.md)。舊撤銷資料僅在使用者於歷史頁確認後清理。
 
 以下初始化步驟只適用於新的空白專案：
@@ -89,6 +91,8 @@ E2E 先以測試公開設定正式編譯到獨立的 `.e2e-dist`，再使用 390
 10. 來源修正驗收：先錄左 049、右 001，換局後錄左 022，再把第一筆 049 的來源改為右。左清單應只剩 022，右清單應為 049 → 001，原始全域序號仍為 1、2、3。049 應顯示「來源已修正：左 → 右」，並保留原始左卡匣批次及側序供稽核；重新整理後結果不變。`side_index` 是原始配置，不是修正後右序，不能用它排序修正後的清單。
 
 ## 6. Vercel 部署
+
+現有正式網站改用 [GitHub Actions → Supabase → Vercel 流程](deployment.md)。需要先中斷 Vercel Git 整合，再完成 Secrets 與一次性 history 同步；`vercel.json` 已停用 Git 自動部署。下列是專案初次匯入資訊，不應再以 Git 自動發布正式版本。
 
 1. 將程式變更提交並推到 GitHub 後，在 Vercel 匯入 `LIN0010/card_research`。
 2. Framework 選 Vite；Build Command `npm run build`；Output Directory `dist`。
