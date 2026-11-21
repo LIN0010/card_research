@@ -41,7 +41,7 @@ beforeEach(async () => {
 })
 afterAll(async () => { await db.close() })
 
-describe('actual PostgreSQL migration and online commands (local PGlite)', () => {
+describe('legacy MVP migration baseline before the permanent-deletion upgrade (local PGlite)', () => {
   it('preserves the supplied A/B sequences across games while isolating machines', async () => {
     const a = await fixture('店內左台')
     const b = await fixture('店內右台')

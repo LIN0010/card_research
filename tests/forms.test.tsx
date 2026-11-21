@@ -101,3 +101,15 @@ it('applies the version shortcut on demand and never changes an already complete
   await user.click(screen.getByRole('button', { name: 'AP6- 帶入' }))
   expect(screen.getByLabelText('卡片編號')).toHaveValue('A06-001')
 })
+
+it('records an unknown card as an actual position without sending a fake card number', async () => {
+  const user = userEvent.setup()
+  const mutate = vi.fn().mockResolvedValue({ id: 'unknown-draw' })
+  render(<DrawForm {...formProps} mutate={mutate} />)
+  await user.click(screen.getByRole('checkbox', { name: /卡號未知/ }))
+  expect(screen.getByLabelText('卡片編號')).toBeDisabled()
+  await user.click(screen.getByRole('radio', { name: '左卡匣' }))
+  await user.click(screen.getByRole('button', { name: '儲存左卡匣出卡' }))
+  expect(mutate).toHaveBeenCalledWith('append_draw', expect.objectContaining({ card_number: null, card_number_unknown: true, side: 'left', rarity: 'unknown' }))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: /卡號未知/ })).not.toBeChecked())
+})

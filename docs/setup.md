@@ -18,10 +18,14 @@ npm run dev
 
 Vite 固定使用 5173；若埠被占用會報錯，不會默默改到其他埠。雲端任務已經隔離，直接使用現有 checkout，不建立 Git worktree。
 
-## 2. 手動建立 Supabase 開發專案
+## 2. Supabase 資料庫設定
+
+**既有 MVP 專案：只執行 `supabase/migrations/202611210001_permanent_delete_unknown_cards.sql` 全文一次，不要重跑最初的 MVP migration。** 詳細步驟與永久刪除範圍見 [永久刪除與卡號未知](permanent-deletion.md)。舊撤銷資料僅在使用者於歷史頁確認後清理。
+
+以下初始化步驟只適用於新的空白專案：
 
 1. 在 Supabase Dashboard 建立新專案，選擇合適區域，安全保存資料庫密碼。
-2. 開啟 **SQL Editor**，使用資料庫管理角色 `postgres`，新增查詢，貼入並執行 `supabase/migrations/202611060001_mvp.sql` 的全部內容。全新且尚未執行 SQL 的專案，只需要此檔案一次；不要執行 `docs/database-schema.draft.sql`，也不需要額外的來源修正 patch migration。
+2. 開啟 **SQL Editor**，使用資料庫管理角色 `postgres`，新增查詢，貼入並執行 `supabase/migrations/202611060001_mvp.sql` 的全部內容。之後再執行 `supabase/migrations/202611210001_permanent_delete_unknown_cards.sql` 全文一次；不要執行 `docs/database-schema.draft.sql`。
 3. 確認執行成功，public 下有 stores、machines、observation_segments、games、cartridges、draws、audit_events，並有 apply_command 函式。app_private 不要加到 API 的 Exposed schemas。
 4. 此 migration 用於新專案，已成功執行就不重貼；它不是可反覆 DROP/CREATE 的腳本。如果曾自行執行過舊 draft，先備份資料並使用獨立新開發專案，不能直接覆蓋同名資料表。
 5. 從 Project Settings／Connect 的 API 設定複製 Project URL；從 API Keys 取得 publishable key。舊版專案可使用 anon key。
@@ -69,7 +73,7 @@ npm run test:e2e
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e
 ```
 
-E2E 先以測試公開設定正式編譯到獨立的 `.e2e-dist`，再使用 390×844 視窗、5174 專用 preview 埠及測試用 Supabase HTTP adapter，連接真實 migration 的本機 PGlite。它會測登入畫面、管理、兩組樣本、刷新、重新登入、修改撤銷與實際下載匯出。測試專案網址及 key 都是假測試設定，請勿拿來當正式環境變數。它不連接 Supabase 託管服務，也不覆蓋 `dist` 的一般建置輸出。
+E2E 先以測試公開設定正式編譯到獨立的 `.e2e-dist`，再使用 390×844 視窗、5174 專用 preview 埠及測試用 Supabase HTTP adapter，連接真實 migration 的本機 PGlite。它會測登入畫面、管理、兩組樣本、刷新、重新登入、修改、永久刪除與實際下載匯出。測試專案網址及 key 都是假測試設定，請勿拿來當正式環境變數。它不連接 Supabase 託管服務，也不覆蓋 `dist` 的一般建置輸出。
 
 ## 5. 實際 Supabase 驗收
 
@@ -78,10 +82,10 @@ E2E 先以測試公開設定正式編譯到獨立的 `.e2e-dist`，再使用 390
 3. 確認按「下一局」後原始全域與側序繼續；切換機台不混合紀錄。
 4. 重新整理、登出再登入 A，確認資料仍從 Supabase 讀取。
 5. 登入 B，確認看不到 A 的店家、機台、出卡與操作歷史。
-6. 修改卡號或來源、撤銷上一筆，檢查原始序號與操作前後快照保留。
+6. 修改卡號或來源後，先取消永久刪除確認，確認資料未變；再確認刪除，驗證該列與專屬稽核已消失，原始序號未重排。
 7. 測試更換及「不確定」批次；新批次原始側序重新從 1 起，全域序號繼續。
 8. 瀏覽器切成離線後送出一筆，確認輸入未被清空、沒有假成功提示；恢復連線後按重試確認，資料只有一筆。此版本沒有離線暫存或背景同步。
-9. 匯出 CSV／JSON，確認包含原始序號、已撤銷列及完整資料；JSON 另包含操作快照。
+9. 匯出 CSV／JSON，確認保留原始序號、缺口及卡號未知標記，不包含已刪除資料或孤立稽核；JSON 另包含有效紀錄的操作快照。
 10. 來源修正驗收：先錄左 049、右 001，換局後錄左 022，再把第一筆 049 的來源改為右。左清單應只剩 022，右清單應為 049 → 001，原始全域序號仍為 1、2、3。049 應顯示「來源已修正：左 → 右」，並保留原始左卡匣批次及側序供稽核；重新整理後結果不變。`side_index` 是原始配置，不是修正後右序，不能用它排序修正後的清單。
 
 ## 6. Vercel 部署

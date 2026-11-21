@@ -2,13 +2,13 @@
 
 手機優先的 React + TypeScript + Vite + Tailwind 線上紀錄 MVP，使用 Supabase Auth／PostgreSQL 保存私人資料。
 
-提供店家機台管理、連續觀測段、跨局出卡、左／右／來源不明、卡匣批次與不確定狀態、修改撤銷及操作歷史、搜尋、CSV／JSON 匯出。未包含離線同步、匯入、預測、機器學習或複雜統計。
+提供店家機台管理、連續觀測段、跨局出卡、左／右／來源不明、卡匣批次與不確定狀態、修改、永久刪除及有效紀錄的操作歷史、搜尋、CSV／JSON 匯出。未包含離線同步、匯入、預測、機器學習或複雜統計。
 
-手機版採收藏手帳風格與底部導覽，出卡頁以「目前狀態 → 快速紀錄 → 本次卡序」排列；本次介面調整不需要新的 SQL。詳見 [UI／UX 重構說明](docs/ui.md)。
+手機版採收藏手帳風格與底部導覽，出卡頁以「目前狀態 → 快速紀錄 → 本次卡序」排列；若升級至永久刪除版本，需另外執行新的 SQL，見下方設定。詳見 [UI／UX 重構說明](docs/ui.md)。
 
 ## 啟動
 
-需要 Node.js 22.12 以上（建議 24 LTS）。先依 [設定教學](docs/setup.md) 建立 Supabase 專案，於 SQL Editor 執行 [migration](supabase/migrations/202611060001_mvp.sql)。
+需要 Node.js 22.12 以上（建議 24 LTS）。先依 [設定教學](docs/setup.md) 設定 Supabase。既有 MVP 專案只執行 [本次升級 migration](supabase/migrations/202611210001_permanent_delete_unknown_cards.sql)，不要重跑初始化；全新空白專案才依序執行 MVP migration 與本次升級。
 
 ```bash
 npm ci
@@ -44,10 +44,10 @@ npm run test:e2e
 
 - 店家 → 機台 → 連續觀測段 → 遊戲局數；換局不重設卡序，不跨機台／觀測段串接。
 - 卡匣以裝填批次辨識；不確定是否更換時另開 uncertain 批次。
-- 原始序號不重排，撤銷採軟刪除並保留操作前後資料。
-- 有效顯示編號只方便閱讀，不作為原始序號或完整連續性證據。
+- 永久刪除會移除該筆卡片、專屬稽核與快取中的卡片內容；原始序號不重排，清單明示缺口。
+- 卡號未知以 NULL 與獨立標記保存實際位置，不可跳過後當成完整連續卡序。
 - 線上寫入由 PostgreSQL 原子配號並依操作 ID 防止重試重複新增。
 - 儲存失敗保留表單；沒有離線持久化，未儲存輸入關閉頁面仍可能遺失。
 - RLS 與複合外鍵隔離私人資料，前端不能直接修改資料表。
 
-詳見 [架構文件](docs/architecture.md)。原 `docs/database-schema.draft.sql` 已改為遷移來源說明，不再是可執行的舊 schema。
+永久刪除升級及手動 SQL 步驟見 [永久刪除與卡號未知](docs/permanent-deletion.md)。詳見 [架構文件](docs/architecture.md)。原 `docs/database-schema.draft.sql` 已改為遷移來源說明，不再是可執行的舊 schema。

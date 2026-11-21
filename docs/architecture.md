@@ -1,6 +1,8 @@
 # 偶像學園雙卡匣卡序研究系統：第一階段 MVP
 
-此文件取代先前將場次與連續序列混用的提案。實作以 `supabase/migrations/202611060001_mvp.sql` 為資料庫定義；尚未配置的遠端服務不視為已驗證。
+**永久刪除升級已取代本文件下方的 soft delete／有效顯示編號設計；目前準則與新 migration 請見 [永久刪除與卡號未知](permanent-deletion.md)。最初 migration 不可重跑。**
+
+此文件取代先前將場次與連續序列混用的提案。資料庫定義包含原 `202611060001_mvp.sql` 及獨立升級 `202611210001_permanent_delete_unknown_cards.sql`；尚未配置的遠端服務不視為已驗證。
 
 ## 資料關聯
 
@@ -31,12 +33,12 @@ app_private.operations 保存寫入操作 ID 與結果，供安全重試
 - `draw_index`：觀測段全域原始序號；永久保留，換局不重設，撤銷不回收。
 - `recorded_side`、`recorded_cartridge_id`、`side_index`：新增當時的原始側序配置；卡匣換批才重新從 1 起。
 - `side`、`cartridge_id`：目前修正後的來源；編輯來源時按照原始 draw_index 對應當時該側有效的批次，不誤指到後來的新卡匣。
-- 修改不重排原始序號。原始輸入及所有修正保存在 audit_events。
+- 修改不重排原始序號。有效紀錄的原始輸入及修正保存在 audit_events；永久刪除時清除該筆專屬稽核及快照。
 - 稽核畫面以同一筆出卡的 revision 排列操作，時間戳及 UUID 僅用於同版本的穩定排序，避免時間戳相同時把修改排到新增之前。
 - 來源改變時顯示「來源已修正：左 → 右」等提示；左右清單使用修正後的 side 並依 draw_index 排序，不用原始 side_index 排序。
-- `deleted_at`：撤銷採軟刪除；資料、序號、操作紀錄都保留。撤銷上一筆是選擇最後一筆有效紀錄，並以固定操作 ID 寫入。
-- 介面「有效顯示 #N」與「左／右 #N」是有效列排序後的閱讀編號，並非資料庫原始側序，也不代表已證實完整連續。
-- 原始與有效編號、批次資訊均於畫面／CSV 區分；JSON 保留完整資料。
+- `deleted_at` 只保留作舊資料清理標記；新版使用真正 DELETE，需確認後才刪除。歷史頁可確認清理舊標記列，migration 不會自動清除。
+- 介面以原始全域序號顯示，刪除後保留缺口；不再用密集顯示編號冒充連續序列。卡號未知以 NULL 與獨立標記保留實際位置。
+- 批次與原始側序仍可在詳細資料查看；JSON／CSV 保留原始位置、缺口與未知標記，不輸出已刪除或尚待清理的舊撤銷列。
 
 ## 寫入與權限
 
@@ -52,7 +54,7 @@ app_private.operations 保存寫入操作 ID 與結果，供安全重試
 6. 相同操作 ID／相同內容重試返回原結果；相同 ID 不同內容拒絕。
 7. 單筆修改及撤銷比對 revision，防止舊畫面覆蓋較新的修改。這是線上基本一致性檢查，不是離線衝突合併功能。
 
-支援 create/update_store、create/update_machine、create_segment、start_game、close_segment、replace_cartridge、append/update/void_draw。
+支援 create/update_store、create/update_machine、create_segment、start_game、close_segment、replace_cartridge、append/update/delete_draw、purge_legacy_voids。
 
 ## 線上儲存狀態
 

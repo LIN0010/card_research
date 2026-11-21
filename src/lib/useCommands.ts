@@ -17,24 +17,25 @@ export function useCommands(repo: Repository, refresh: () => Promise<void>) {
 
   async function send(pending: Pending) {
     if (inFlight.current) return
-    inFlight.current = true; setSending(true); setNeedsRetry(false); setError(''); setMessage('儲存中…')
+    const removing = pending.action === 'delete_draw' || pending.action === 'purge_legacy_voids'
+    inFlight.current = true; setSending(true); setNeedsRetry(false); setError(''); setMessage(removing ? '永久刪除中…' : '儲存中…')
     try {
       const result = await repo.command(pending.id, pending.action, pending.payload)
       current.current = null
-      setMessage('已儲存至 Supabase')
+      setMessage(removing ? '已永久刪除' : '已儲存至 Supabase')
       // A refresh failure after commit is not a write failure. Never resubmit it.
-      try { await refresh() } catch { setMessage('已儲存至 Supabase，但清單更新失敗，請按「重新讀取」。') }
+      try { await refresh() } catch { setMessage(removing ? '已永久刪除，但清單更新失敗，請按「重新讀取」。' : '已儲存至 Supabase，但清單更新失敗，請按「重新讀取」。') }
       pending.resolve(result)
     } catch (cause) {
       const failure = cause instanceof Error ? cause : new Error('儲存失敗')
       setError(failure.message)
       if (!(failure instanceof CommandError) || failure.uncertain) {
-        setMessage('無法確認是否已儲存。輸入仍保留，請重試同一筆操作。')
+        setMessage(removing ? '無法確認是否已刪除，請重試同一筆操作。' : '無法確認是否已儲存。輸入仍保留，請重試同一筆操作。')
         setNeedsRetry(true)
         // Keep the original caller awaiting. A successful retry resolves that caller,
         // so its form clears exactly once, including an indeterminate first response.
       } else {
-        current.current = null; setMessage('未儲存，請修正後再送出。'); pending.reject(failure)
+        current.current = null; setMessage(removing ? '未刪除，請確認後再重試。' : '未儲存，請修正後再送出。'); pending.reject(failure)
       }
     } finally { inFlight.current = false; setSending(false) }
   }
