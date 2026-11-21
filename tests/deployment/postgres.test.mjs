@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, cpSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -81,10 +81,24 @@ test('real PostgreSQL + Supabase CLI: baseline verification, history-only repair
         assert.throws(() => assertCatalog(current,changed),/Database structure/)
       } finally { await db.query('rollback') }
     }
-    const diagnostic = await collectDiagnostics(db,expected)
+    // Reproduce the user-confirmed server shape in this disposable database:
+    // CRLF application bodies plus the pinned official platform event trigger.
+    const definitions = await db.query(`select pg_get_functiondef(p.oid) as definition from pg_proc p
+      join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','app_private')`)
+    for (const row of definitions.rows) await db.query(row.definition.replaceAll('\n','\r\n'))
+    await db.query(readFileSync('tests/fixtures/supabase-auto-rls.sql','utf8'))
+    assertCatalog(current,await readCatalog(db))
+    await db.query('begin')
+    try {
+      await db.query('grant execute on function public.rls_auto_enable() to authenticated')
+      const changedAcl = await catalog(db)
+      assert.throws(() => assertCatalog(current,changedAcl),/ACL/)
+    } finally { await db.query('rollback') }
+    const diagnostic = await collectDiagnostics(db,current)
     assert.equal(diagnostic.environment.transaction_read_only,'on')
-    assert.equal(diagnostic.exact_functions_match,true)
-    assert.equal(diagnostic.exact_function_grants_match,true)
+    assert.equal(diagnostic.exact_functions_match,false)
+    assert.equal(diagnostic.exact_function_grants_match,false)
+    assert.equal(diagnostic.catalog_matches_verified_policy,true)
     await assert.rejects(() => db.query("insert into public.stores(name) values('must fail')"),error => error.code === '25006')
     assert.deepEqual((await db.query('select * from public.stores')).rows,before)
   } finally {
