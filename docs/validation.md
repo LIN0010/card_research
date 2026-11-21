@@ -109,3 +109,12 @@ PostgreSQL 測試使用 PGlite 執行真實 migration、PL/pgSQL、約束及 RLS
 - 此變更未修改 src、兩份既有 migration、Auth 或 RLS，亦未建立新應用 SQL migration。未對正式 Supabase 執行 verify／repair／push、未啟用正式 workflow、未修改外部 Vercel 設定或部署。
 
 GitHub hosted runner 與實際 Supabase TLS／Session pooler、Vercel token 權限及線上發佈仍待使用者依 [部署設定](deployment.md) 完成。測試不能宣稱已對正式環境連線成功。
+
+## 2026-11-22 functions／functionGrants 唯讀診斷（台北）
+
+- 檢查 Production run 44930592951、job 136926592262 的 metadata 及對應 commit 執行順序；前置 Checks 成功，結構比對失敗在 repair／push／deploy 之前。既有錯誤沒有逐函式差異，尚未取得正式庫逐項診斷結果。
+- 本機分別模擬 public-schema／global 的常見預設 EXECUTE grants，三個應用函式與受比對 ACL 仍完全符合 baseline；另以額外非 extension helper 重現兩類失敗，原 guard 持續拒絕，未把重現案例當成正式庫事實。
+- 24 項部署測試通過、0 略過，含新增 7 項診斷測試。真 PostgreSQL 17 及 PGlite 均驗證 read-only session／snapshot、診斷後 INSERT 被 SQLSTATE 25006 拒絕；既有測試資料保留。
+- SQL Editor 版本經本機實際執行驗證，source／configuration SHA256 與 Actions 報告一致；報告不輸出原始 source 或 GUC 值。修改內容、owner、grant option 或新增函式仍被原比對器拒絕。
+- build／TypeScript 與 actionlint 通過；未更動 Production workflow、catalog 比對、release、TLS／context guards、baseline hashes、應用 migration、src、Auth 或正式資料庫。
+- 新增 workflow 僅手動／main，沿用 production Secrets 與嚴格 TLS；沒有正式 repair、migration 或 Vercel token／部署。調查說明與安全 SQL 查詢見 [唯讀診斷](function-diagnostics.md)。

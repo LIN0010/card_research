@@ -74,6 +74,8 @@ Vite 公開 URL／key 會進瀏覽器 bundle；它們即使存成 Secrets 也不
 
 ## 5. 一次性同步已手動執行的 migration history
 
+若 verify-history 回報 functions／functionGrants 差異，先依 [函式唯讀診斷](function-diagnostics.md) 取得逐項事實；不要直接 repair、重跑 SQL 或將差異視為平台預設而忽略。
+
 正式庫已手動套用這兩份 SQL：
 
 - `202611060001_mvp.sql`

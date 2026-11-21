@@ -9,6 +9,7 @@ import pg from 'pg'
 import { migrations } from '../../scripts/deploy/plan.mjs'
 import { catalog, assertCatalog, expectedCatalog, history, readCatalog } from '../../scripts/deploy/catalog.mjs'
 import { withLock } from '../../scripts/deploy/production.mjs'
+import { collectDiagnostics } from '../../scripts/deploy/function-diagnostics.mjs'
 
 const connection = process.env.CI_DATABASE_URL
 if (process.env.REQUIRE_CLI_TESTS === 'true' && !connection) throw new Error('CI_DATABASE_URL is required; never substitute a production URL')
@@ -80,6 +81,12 @@ test('real PostgreSQL + Supabase CLI: baseline verification, history-only repair
         assert.throws(() => assertCatalog(current,changed),/Database structure/)
       } finally { await db.query('rollback') }
     }
+    const diagnostic = await collectDiagnostics(db,expected)
+    assert.equal(diagnostic.environment.transaction_read_only,'on')
+    assert.equal(diagnostic.exact_functions_match,true)
+    assert.equal(diagnostic.exact_function_grants_match,true)
+    await assert.rejects(() => db.query("insert into public.stores(name) values('must fail')"),error => error.code === '25006')
+    assert.deepEqual((await db.query('select * from public.stores')).rows,before)
   } finally {
     await second?.end(); await db?.end()
     await admin.query(`drop database if exists ${name}`)
